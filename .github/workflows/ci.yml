@@ -48,7 +48,7 @@ jobs:
         run: >-
           dnf install -y --setopt=install_weak_deps=False
           git cmake ninja-build gcc-c++ clang clang-tools-extra
-          qt6-qtbase-devel qt6-qtnetworkauth-devel libsodium-devel
+          libasan libubsan qt6-qtbase-devel qt6-qtnetworkauth-devel libsodium-devel
       - name: Check out sources
         uses: actions/checkout@v4
       - name: Report toolchain versions

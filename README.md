@@ -24,7 +24,7 @@ sudo pacman -S --needed base-devel cmake ninja clang qt6-base qt6-networkauth li
 For Fedora:
 
 ```bash
-sudo dnf install cmake ninja-build gcc-c++ clang clang-tools-extra qt6-qtbase-devel qt6-qtnetworkauth-devel libsodium-devel
+sudo dnf install cmake ninja-build gcc-c++ clang clang-tools-extra libasan libubsan qt6-qtbase-devel qt6-qtnetworkauth-devel libsodium-devel
 ```
 
 The OAuth implementation requires Qt NetworkAuth; the build foundation itself uses
