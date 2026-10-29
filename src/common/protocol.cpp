@@ -1,5 +1,7 @@
 #include "tcp_chat/protocol.h"
 
+#include "strict_json.h"
+
 #include <QJsonDocument>
 #include <QStringDecoder>
 
@@ -200,6 +202,12 @@ std::optional<Envelope> decode_envelope(const QByteArray& json, ProtocolError* e
     utf8_decoder.decode(json);
     if (utf8_decoder.hasError()) {
         set_error(error, ErrorCode::InvalidMessage, QStringLiteral("Payload is not valid UTF-8"));
+        return std::nullopt;
+    }
+
+    if (!detail::is_strict_json(json)) {
+        set_error(error, ErrorCode::InvalidMessage,
+            QStringLiteral("Payload is not strict JSON, contains duplicate keys, or exceeds the nesting limit"));
         return std::nullopt;
     }
 

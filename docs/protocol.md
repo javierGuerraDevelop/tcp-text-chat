@@ -39,8 +39,14 @@ Every payload is a UTF-8 JSON object with these top-level fields:
 | `payload` | Required | JSON object; may be empty |
 
 Version-1 receivers reject additional top-level fields, missing fields, incorrect
-field types, invalid UTF-8, malformed JSON, and non-object JSON roots. Senders use
-compact JSON and must keep the complete encoded frame within the size limit.
+field types, invalid UTF-8, malformed JSON, and non-object JSON roots. JSON must use
+strict RFC 8259 syntax: non-standard numbers, invalid escapes, and literal control
+characters are rejected even if a permissive parser accepts them. Duplicate object
+member names, including names that become equal after escape decoding, are rejected
+at every depth. JSON nesting is limited to 64 levels.
+
+Senders use compact JSON and must keep the complete encoded frame within the size
+limit.
 
 A request sender assigns `requestId` as an opaque correlation identifier. A response
 to that request echoes the same value. Server-originated events omit it unless they

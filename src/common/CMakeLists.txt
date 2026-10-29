@@ -1,6 +1,7 @@
 add_library(tcp_chat_common STATIC
     frame.cpp
     protocol.cpp
+    strict_json.cpp
     version.cpp
 )
 add_library(tcp_chat::common ALIAS tcp_chat_common)

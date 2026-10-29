@@ -56,6 +56,14 @@ private slots:
     void rejectsUnknownMessageType();
     /// Checks malformed JSON reporting.
     void rejectsInvalidJson();
+    /// Provides non-standard JSON accepted by permissive parsers.
+    void rejectsNonStrictJson_data();
+    /// Checks strict JSON syntax and duplicate-key rejection.
+    void rejectsNonStrictJson();
+    /// Checks valid escapes, literals, and number forms.
+    void acceptsStrictJsonSyntax();
+    /// Checks the JSON nesting resource limit.
+    void rejectsExcessiveJsonNesting();
     /// Checks JSON root type validation.
     void rejectsNonObjectJson();
     /// Checks UTF-8 validation before JSON parsing.
@@ -272,6 +280,64 @@ void ProtocolTest::rejectsInvalidJson()
 {
     tcp_chat::protocol::ProtocolError error;
     const auto decoded = tcp_chat::protocol::decode_envelope(QByteArrayLiteral("{not-json"), &error);
+    QVERIFY(!decoded.has_value());
+    QCOMPARE(error.code, ErrorCode::InvalidMessage);
+}
+
+void ProtocolTest::rejectsNonStrictJson_data()
+{
+    QTest::addColumn<QByteArray>("json");
+
+    QTest::newRow("trailing decimal point") << QByteArray { R"({"version":1.,"type":"ping","payload":{}})" };
+    QTest::newRow("leading zero") << QByteArray { R"({"version":01,"type":"ping","payload":{}})" };
+    QTest::newRow("leading plus") << QByteArray { R"({"version":+1,"type":"ping","payload":{}})" };
+    QTest::newRow("missing exponent digits") << QByteArray { R"({"version":1e,"type":"ping","payload":{}})" };
+    QTest::newRow("invalid escape") << QByteArray { R"({"version":1,"type":"ping","payload":{"text":"\q"}})" };
+    QTest::newRow("literal control character") << QByteArray { "{\"version\":1,\"type\":\"ping\",\"payload\":{\"text\":\"line\nbreak\"}}" };
+    QTest::newRow("trailing object comma") << QByteArray { R"({"version":1,"type":"ping","payload":{},})" };
+    QTest::newRow("trailing array comma") << QByteArray { R"({"version":1,"type":"ping","payload":{"values":[1,],}})" };
+    QTest::newRow("single quoted string") << QByteArray { R"({'version':1,'type':'ping','payload':{}})" };
+    QTest::newRow("unquoted key") << QByteArray { R"({version:1,"type":"ping","payload":{}})" };
+    QTest::newRow("trailing token") << QByteArray { R"({"version":1,"type":"ping","payload":{}} true)" };
+    QTest::newRow("duplicate envelope field") << QByteArray { R"({"version":2,"version":1,"type":"ping","payload":{}})" };
+    QTest::newRow("escaped duplicate envelope field") << QByteArray { R"({"version":1,"vers\u0069on":2,"type":"ping","payload":{}})" };
+    QTest::newRow("duplicate payload field") << QByteArray { R"({"version":1,"type":"ping","payload":{"value":1,"value":2}})" };
+}
+
+void ProtocolTest::rejectsNonStrictJson()
+{
+    QFETCH(QByteArray, json);
+
+    tcp_chat::protocol::ProtocolError error;
+    const auto decoded = tcp_chat::protocol::decode_envelope(json, &error);
+    QVERIFY(!decoded.has_value());
+    QCOMPARE(error.code, ErrorCode::InvalidMessage);
+}
+
+void ProtocolTest::acceptsStrictJsonSyntax()
+{
+    const QByteArray json { R"({"version":1,"type":"ping","requestId":"escaped\u0041","payload":{"text":"quote \" slash \\ backspace \b formfeed \f newline \n return \r tab \t solidus \/ unicode \u0061","array":[true,false,null,-0.5e+2,0]}})" };
+
+    tcp_chat::protocol::ProtocolError error;
+    const auto decoded = tcp_chat::protocol::decode_envelope(json, &error);
+    QVERIFY(decoded.has_value());
+    QCOMPARE(decoded->request_id, std::optional<QString> { QStringLiteral("escapedA") });
+}
+
+void ProtocolTest::rejectsExcessiveJsonNesting()
+{
+    QByteArray json { R"({"version":1,"type":"ping","payload":{"nested":)" };
+    for (int depth = 0; depth < 65; ++depth) {
+        json.append('[');
+    }
+    json.append('0');
+    for (int depth = 0; depth < 65; ++depth) {
+        json.append(']');
+    }
+    json.append("}}");
+
+    tcp_chat::protocol::ProtocolError error;
+    const auto decoded = tcp_chat::protocol::decode_envelope(json, &error);
     QVERIFY(!decoded.has_value());
     QCOMPARE(error.code, ErrorCode::InvalidMessage);
 }
