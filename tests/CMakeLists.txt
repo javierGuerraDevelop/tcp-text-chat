@@ -24,6 +24,17 @@ target_link_libraries(tcp_chat_protocol_tests
 )
 tcp_chat_configure_target(tcp_chat_protocol_tests)
 
+add_executable(tcp_chat_frame_decoder_tests
+    test_frame_decoder.cpp
+)
+target_link_libraries(tcp_chat_frame_decoder_tests
+    PRIVATE
+        tcp_chat::common
+        Qt6::Test
+)
+tcp_chat_configure_target(tcp_chat_frame_decoder_tests)
+
+add_test(NAME frame_decoder COMMAND tcp_chat_frame_decoder_tests)
 add_test(NAME protocol COMMAND tcp_chat_protocol_tests)
 add_test(NAME common.version COMMAND tcp_chat_tests)
 add_test(NAME client.version COMMAND tcp_chat_client --version)

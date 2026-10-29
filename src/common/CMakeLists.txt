@@ -1,4 +1,5 @@
 add_library(tcp_chat_common STATIC
+    frame.cpp
     protocol.cpp
     version.cpp
 )
