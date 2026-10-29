@@ -60,15 +60,15 @@ namespace {
 
     bool StrictJsonParser::parse_value(int depth)
     {
-        if (depth > maximum_json_depth || position_ >= json_.size()) {
+        if (position_ >= json_.size()) {
             return false;
         }
 
         switch (json_[position_]) {
         case '{':
-            return parse_object(depth);
+            return depth < maximum_json_depth && parse_object(depth);
         case '[':
-            return parse_array(depth);
+            return depth < maximum_json_depth && parse_array(depth);
         case '"':
             return parse_string(nullptr);
         case 't':

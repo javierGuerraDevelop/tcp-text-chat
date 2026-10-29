@@ -48,7 +48,8 @@ field types, invalid UTF-8, malformed JSON, and non-object JSON roots. JSON must
 strict RFC 8259 syntax: non-standard numbers, invalid escapes, and literal control
 characters are rejected even if a permissive parser accepts them. Duplicate object
 member names, including names that become equal after escape decoding, are rejected
-at every depth. JSON nesting is limited to 64 levels.
+at every depth. JSON object/array nesting is limited to 64 levels, with the root
+container counted as level 1; scalar content does not add a container level.
 
 Senders use compact JSON and must keep the complete encoded frame within the size
 limit.

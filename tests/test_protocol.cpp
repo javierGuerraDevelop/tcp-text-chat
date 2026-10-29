@@ -62,8 +62,10 @@ private slots:
     void rejectsNonStrictJson();
     /// Checks valid escapes, literals, and number forms.
     void acceptsStrictJsonSyntax();
-    /// Checks the JSON nesting resource limit.
-    void rejectsExcessiveJsonNesting();
+    /// Provides empty and nonempty chains at the nesting boundary.
+    void enforcesJsonNestingBoundary_data();
+    /// Checks that exactly 64 containers are accepted and 65 are rejected.
+    void enforcesJsonNestingBoundary();
     /// Checks JSON root type validation.
     void rejectsNonObjectJson();
     /// Checks UTF-8 validation before JSON parsing.
@@ -324,22 +326,42 @@ void ProtocolTest::acceptsStrictJsonSyntax()
     QCOMPARE(decoded->request_id, std::optional<QString> { QStringLiteral("escapedA") });
 }
 
-void ProtocolTest::rejectsExcessiveJsonNesting()
+void ProtocolTest::enforcesJsonNestingBoundary_data()
 {
+    QTest::addColumn<int>("arrayDepth");
+    QTest::addColumn<bool>("nonempty");
+    QTest::addColumn<bool>("accepted");
+
+    QTest::newRow("64 empty containers") << 62 << false << true;
+    QTest::newRow("64 containers with scalar") << 62 << true << true;
+    QTest::newRow("65 empty containers") << 63 << false << false;
+    QTest::newRow("65 containers with scalar") << 63 << true << false;
+}
+
+void ProtocolTest::enforcesJsonNestingBoundary()
+{
+    QFETCH(int, arrayDepth);
+    QFETCH(bool, nonempty);
+    QFETCH(bool, accepted);
+
     QByteArray json { R"({"version":1,"type":"ping","payload":{"nested":)" };
-    for (int depth = 0; depth < 65; ++depth) {
+    for (int depth = 0; depth < arrayDepth; ++depth) {
         json.append('[');
     }
-    json.append('0');
-    for (int depth = 0; depth < 65; ++depth) {
+    if (nonempty) {
+        json.append('0');
+    }
+    for (int depth = 0; depth < arrayDepth; ++depth) {
         json.append(']');
     }
     json.append("}}");
 
     tcp_chat::protocol::ProtocolError error;
     const auto decoded = tcp_chat::protocol::decode_envelope(json, &error);
-    QVERIFY(!decoded.has_value());
-    QCOMPARE(error.code, ErrorCode::InvalidMessage);
+    QCOMPARE(decoded.has_value(), accepted);
+    if (!accepted) {
+        QCOMPARE(error.code, ErrorCode::InvalidMessage);
+    }
 }
 
 void ProtocolTest::rejectsNonObjectJson()
