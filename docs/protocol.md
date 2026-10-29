@@ -23,9 +23,14 @@ for the declared payload.
 
 TCP reads may split a header or payload at any byte and may coalesce multiple frames.
 A receiver must retain partial input, return only complete payloads, and preserve the
-order of frames in a coalesced sequence. There is no delimiter-based resynchronization.
-After a framing error, decoding stops and the transport must close the connection;
-a decoder reset is only for a new stream.
+order of frames in a coalesced sequence. The shared decoder retains at most 65,540
+bytes (one maximum frame and its header). Its append operation reports how many bytes
+were consumed; when it returns zero because the buffer is full, the caller drains
+complete frames before retrying the unconsumed suffix. A full buffer is backpressure,
+not a protocol error.
+
+There is no delimiter-based resynchronization. After a framing error, decoding stops
+and the transport must close the connection; a decoder reset is only for a new stream.
 
 ## JSON envelope
 

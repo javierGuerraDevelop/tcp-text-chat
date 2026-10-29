@@ -4,7 +4,8 @@
 
 namespace tcp_chat::protocol {
 
-inline constexpr qsizetype maximum_frame_size = 64 * 1024;
+inline constexpr qsizetype maximum_frame_size    = 64 * 1024;
+inline constexpr qsizetype maximum_buffered_size = maximum_frame_size + 4;
 
 /// Encodes one nonempty payload with a four-byte big-endian length prefix.
 std::optional<QByteArray> encode_frame(const QByteArray& payload, ProtocolError* error = nullptr);
@@ -15,8 +16,8 @@ std::optional<QByteArray> encode_envelope(const Envelope& envelope, ProtocolErro
 /// Incrementally separates a byte stream into bounded payload frames.
 class FrameDecoder {
 public:
-    /// Appends stream bytes unless a framing error has already occurred.
-    void append(QByteArrayView data);
+    /// Consumes bytes that fit the input bound and returns the count; drain frames before retrying a zero append.
+    qsizetype append(QByteArrayView data);
 
     /// Returns the next complete payload, or nullopt when more data is required or an error exists.
     std::optional<QByteArray> next_frame();
@@ -31,7 +32,11 @@ private:
     /// Records a framing error and stops further decoding until reset.
     void fail(ErrorCode code, const QString& message);
 
+    /// Discards consumed bytes when space is needed or the buffer is fully consumed.
+    void compact();
+
     QByteArray buffer_;
+    qsizetype read_offset_ = 0;
     std::optional<qsizetype> expected_size_;
     std::optional<ProtocolError> error_;
 };

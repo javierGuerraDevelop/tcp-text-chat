@@ -58,13 +58,23 @@ std::optional<QByteArray> encode_envelope(const Envelope& envelope, ProtocolErro
     return encode_frame(QJsonDocument(*object).toJson(QJsonDocument::Compact), error);
 }
 
-void FrameDecoder::append(QByteArrayView data)
+qsizetype FrameDecoder::append(QByteArrayView data)
 {
     if (error_.has_value()) {
-        return;
+        return 0;
     }
 
-    buffer_.append(data);
+    const qsizetype unread_size = buffer_.size() - read_offset_;
+    const qsizetype consumed    = qMin<qsizetype>(data.size(), maximum_buffered_size - unread_size);
+    if (consumed <= 0) {
+        return 0;
+    }
+
+    if (read_offset_ > 0 && (read_offset_ == buffer_.size() || buffer_.size() + consumed > maximum_buffered_size)) {
+        compact();
+    }
+    buffer_.append(QByteArrayView(data.constData(), consumed));
+    return consumed;
 }
 
 std::optional<QByteArray> FrameDecoder::next_frame()
@@ -74,12 +84,12 @@ std::optional<QByteArray> FrameDecoder::next_frame()
     }
 
     if (!expected_size_.has_value()) {
-        if (buffer_.size() < header_size) {
+        if (buffer_.size() - read_offset_ < header_size) {
             return std::nullopt;
         }
 
-        const quint32 payload_size = qFromBigEndian<quint32>(buffer_.constData());
-        buffer_.remove(0, header_size);
+        const quint32 payload_size = qFromBigEndian<quint32>(buffer_.constData() + read_offset_);
+        read_offset_ += header_size;
         if (payload_size == 0) {
             fail(ErrorCode::InvalidFrame, QStringLiteral("Frame payload must not be empty"));
             return std::nullopt;
@@ -92,13 +102,16 @@ std::optional<QByteArray> FrameDecoder::next_frame()
         expected_size_ = static_cast<qsizetype>(payload_size);
     }
 
-    if (buffer_.size() < *expected_size_) {
+    if (buffer_.size() - read_offset_ < *expected_size_) {
         return std::nullopt;
     }
 
-    QByteArray payload = buffer_.left(*expected_size_);
-    buffer_.remove(0, *expected_size_);
+    QByteArray payload = buffer_.mid(read_offset_, *expected_size_);
+    read_offset_ += *expected_size_;
     expected_size_.reset();
+    if (read_offset_ == buffer_.size()) {
+        compact();
+    }
     return payload;
 }
 
@@ -110,8 +123,22 @@ const ProtocolError* FrameDecoder::error() const noexcept
 void FrameDecoder::reset()
 {
     buffer_.clear();
+    read_offset_ = 0;
     expected_size_.reset();
     error_.reset();
+}
+
+void FrameDecoder::compact()
+{
+    if (read_offset_ == 0) {
+        return;
+    }
+    if (read_offset_ == buffer_.size()) {
+        buffer_.clear();
+    } else {
+        buffer_.remove(0, read_offset_);
+    }
+    read_offset_ = 0;
 }
 
 void FrameDecoder::fail(ErrorCode code, const QString& message)

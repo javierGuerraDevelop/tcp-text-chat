@@ -56,6 +56,12 @@ private slots:
     void rejectsOversizedHeader();
     /// Checks sticky errors and explicit decoder reset.
     void keepsErrorUntilReset();
+    /// Checks that a full input buffer applies backpressure without an error.
+    void limitsBufferedInputWithoutDraining();
+    /// Checks bounded appends across multiple maximum-size frames.
+    void decodesLargeCoalescedInputWithBackpressure();
+    /// Checks cursor correctness across many small coalesced frames.
+    void decodesManySmallCoalescedFrames();
     /// Checks every possible two-part split of a frame.
     void testsEverySplitPosition();
     /// Checks deterministic randomized chunk boundaries and coalescing.
@@ -198,6 +204,74 @@ void FrameDecoderTest::keepsErrorUntilReset()
     const auto decoded = decoder.next_frame();
     QVERIFY(decoded.has_value());
     QCOMPARE(*decoded, QByteArrayLiteral("accepted"));
+}
+
+void FrameDecoderTest::limitsBufferedInputWithoutDraining()
+{
+    const QByteArray payload(tcp_chat::protocol::maximum_frame_size, 'x');
+    const QByteArray stream = raw_frame(payload);
+    FrameDecoder decoder;
+
+    QCOMPARE(decoder.append(stream), stream.size());
+    QCOMPARE(decoder.append(QByteArrayView { "x" }), 0);
+    QVERIFY(decoder.error() == nullptr);
+
+    const auto decoded = decoder.next_frame();
+    QVERIFY(decoded.has_value());
+    QCOMPARE(*decoded, payload);
+
+    const QByteArray next_stream = raw_frame(QByteArrayLiteral("next"));
+    QCOMPARE(decoder.append(next_stream), next_stream.size());
+    const auto next = decoder.next_frame();
+    QVERIFY(next.has_value());
+    QCOMPARE(*next, QByteArrayLiteral("next"));
+}
+
+void FrameDecoderTest::decodesLargeCoalescedInputWithBackpressure()
+{
+    const QByteArray first_payload(tcp_chat::protocol::maximum_frame_size, 'a');
+    const QByteArray second_payload(tcp_chat::protocol::maximum_frame_size, 'b');
+    QByteArray stream = raw_frame(first_payload);
+    stream.append(raw_frame(second_payload));
+
+    QList<QByteArray> actual;
+    FrameDecoder decoder;
+    qsizetype offset = 0;
+    while (offset < stream.size()) {
+        const qsizetype consumed = decoder.append(QByteArrayView(stream.constData() + offset, stream.size() - offset));
+        QVERIFY(consumed > 0);
+        offset += consumed;
+        while (const auto frame = decoder.next_frame()) {
+            actual.append(*frame);
+        }
+        QVERIFY(decoder.error() == nullptr);
+    }
+    while (const auto frame = decoder.next_frame()) {
+        actual.append(*frame);
+    }
+
+    QCOMPARE(actual.size(), 2);
+    QCOMPARE(actual[0], first_payload);
+    QCOMPARE(actual[1], second_payload);
+}
+
+void FrameDecoderTest::decodesManySmallCoalescedFrames()
+{
+    constexpr int frame_count = 10000;
+    QByteArray stream;
+    for (int index = 0; index < frame_count; ++index) {
+        stream.append(raw_frame(QByteArrayLiteral("x")));
+    }
+
+    FrameDecoder decoder;
+    QCOMPARE(decoder.append(stream), stream.size());
+    for (int index = 0; index < frame_count; ++index) {
+        const auto decoded = decoder.next_frame();
+        QVERIFY(decoded.has_value());
+        QCOMPARE(*decoded, QByteArrayLiteral("x"));
+    }
+    QVERIFY(!decoder.next_frame().has_value());
+    QVERIFY(decoder.error() == nullptr);
 }
 
 void FrameDecoderTest::testsEverySplitPosition()
