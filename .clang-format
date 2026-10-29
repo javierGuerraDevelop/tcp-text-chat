@@ -1,0 +1,13 @@
+Language: Cpp
+BasedOnStyle: WebKit
+
+AlignConsecutiveMacros: true
+AlignConsecutiveAssignments: true
+InsertNewlineAtEOF: true
+
+BreakConstructorInitializers: BeforeComma
+PackConstructorInitializers: Never
+Cpp11BracedListStyle: false
+
+# cmake -B build -S . -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+# ln -sF build/compile_commands.json .
