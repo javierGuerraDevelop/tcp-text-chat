@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    container: fedora:43
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: GCC
+            cc: gcc
+            cxx: g++
+            preset: dev
+            format: "true"
+          - name: Clang
+            cc: clang
+            cxx: clang++
+            preset: dev
+            format: "false"
+          - name: GCC ASan and UBSan
+            cc: gcc
+            cxx: g++
+            preset: sanitizers
+            format: "false"
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+      QT_QPA_PLATFORM: offscreen
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+    steps:
+      - name: Install system dependencies
+        run: >-
+          dnf install -y --setopt=install_weak_deps=False
+          git cmake ninja-build gcc-c++ clang clang-tools-extra
+          qt6-qtbase-devel qt6-qtnetworkauth-devel libsodium-devel
+      - name: Check out sources
+        uses: actions/checkout@v4
+      - name: Report toolchain versions
+        run: |
+          cmake --version
+          "${CXX}" --version
+          qmake6 -query QT_VERSION
+          pkg-config --modversion libsodium
+      - name: Configure
+        run: cmake --preset "${{ matrix.preset }}"
+      - name: Build
+        run: cmake --build --preset "${{ matrix.preset }}" --parallel
+      - name: Test
+        run: ctest --preset "${{ matrix.preset }}"
+      - name: Check formatting
+        if: matrix.format == 'true'
+        run: git ls-files -z -- '*.cpp' '*.h' | xargs -0 --no-run-if-empty clang-format --dry-run --Werror
