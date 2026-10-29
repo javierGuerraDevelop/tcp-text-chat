@@ -1,12 +1,12 @@
 #include "tcp_chat/version.h"
 
-#include <QApplication>
 #include <QCommandLineParser>
+#include <QCoreApplication>
 
 /// Starts the client and processes its command-line metadata options.
 int main(int argc, char* argv[])
 {
-    QApplication app(argc, argv);
+    QCoreApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("tcp-text-chat"));
     QCoreApplication::setApplicationName(QStringLiteral("tcp-text-chat-client"));
     QCoreApplication::setApplicationVersion(tcp_chat::application_version());
