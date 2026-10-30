@@ -1,5 +1,6 @@
 add_library(tcp_chat_storage STATIC
     account_repository.cpp
+    database_worker.cpp
     message_repository.cpp
     migration_runner.cpp
     session_repository.cpp
