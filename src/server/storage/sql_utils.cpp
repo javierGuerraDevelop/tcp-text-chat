@@ -24,7 +24,8 @@ void set_query_error(StorageError* error, const QSqlError& sql_error, const QStr
 {
     const QString native_code = sql_error.nativeErrorCode();
     const bool constraint     = native_code == QStringLiteral("19") || native_code == QStringLiteral("1555")
-        || native_code == QStringLiteral("2067");
+        || native_code == QStringLiteral("2067")
+        || sql_error.text().contains(QStringLiteral("constraint failed"), Qt::CaseInsensitive);
     QString message = context;
     if (!native_code.isEmpty()) {
         message = QStringLiteral("%1 (SQLite %2)").arg(context, native_code);
