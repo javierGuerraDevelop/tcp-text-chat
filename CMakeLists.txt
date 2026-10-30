@@ -39,7 +39,7 @@ function(tcp_chat_configure_target target)
     endif()
 endfunction()
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets Sql)
 
 add_subdirectory(src/common)
 add_subdirectory(src/client)

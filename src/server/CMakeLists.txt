@@ -1,3 +1,5 @@
+add_subdirectory(storage)
+
 add_executable(tcp_chat_server
     main.cpp
 )
@@ -5,6 +7,7 @@ add_executable(tcp_chat_server
 target_link_libraries(tcp_chat_server
     PRIVATE
         tcp_chat::common
+        tcp_chat::storage
         Qt6::Core
 )
 
