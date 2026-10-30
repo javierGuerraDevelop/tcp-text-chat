@@ -15,9 +15,8 @@ class TlsConnection : public QObject {
     Q_OBJECT
 
 public:
-    /// Prepares an accepted socket for TLS negotiation on the server's thread.
-    TlsConnection(qintptr descriptor, quint64 id, const TlsServerConfiguration& configuration,
-        const QSslConfiguration& ssl, TlsServer* parent)
+    /// Prepares an unconnected socket for TLS negotiation on the server's thread.
+    TlsConnection(quint64 id, const TlsServerConfiguration& configuration, const QSslConfiguration& ssl, TlsServer* parent)
         : QObject(parent)
         , id_(id)
         , socket_(new QSslSocket(this))
@@ -33,23 +32,33 @@ public:
                 fail();
             }
         });
-        connect(socket_, &QSslSocket::disconnected, this, [this] { emit finished(this); });
+        connect(socket_, &QSslSocket::disconnected, this, &TlsConnection::finish_if_unconnected);
         connect(&session_, &transport::FramedSocket::message_received,
             this, [this](const protocol::Envelope& envelope) { emit message(id_, envelope); });
         connect(&session_, &transport::FramedSocket::protocol_error,
             this, [this](const protocol::ProtocolError& error) { emit protocol_failure(id_, error); });
+    }
 
+    /// Starts negotiation after the server has connected all lifecycle handlers.
+    void start(qintptr descriptor, std::chrono::milliseconds handshake_timeout)
+    {
+        if (finished_) {
+            return;
+        }
         if (!socket_->setSocketDescriptor(descriptor)) {
             fail();
             return;
         }
-        timer_.start(static_cast<int>(configuration.handshake_timeout.count()));
+        timer_.start(static_cast<int>(handshake_timeout.count()));
         socket_->startServerEncryption();
     }
 
     /// Starts framed communication once the peer has completed TLS negotiation.
     void encrypted()
     {
+        if (finished_) {
+            return;
+        }
         timer_.stop();
         if (const auto error = session_.start(); error.has_value()) {
             fail();
@@ -68,11 +77,19 @@ public:
     /// Flushes established output, or aborts an incomplete handshake.
     void close()
     {
+        if (finished_) {
+            return;
+        }
         timer_.stop();
-        if (socket_->isEncrypted()) {
+        if (socket_->state() == QAbstractSocket::UnconnectedState) {
+            finish_if_unconnected();
+        } else if (socket_->state() == QAbstractSocket::ClosingState) {
+            return;
+        } else if (socket_->isEncrypted()) {
             session_.close();
         } else {
             socket_->abort();
+            finish_connection();
         }
     }
 
@@ -116,12 +133,34 @@ private:
     /// Stops negotiation and closes the socket after a local or TLS failure.
     void fail()
     {
+        if (finished_) {
+            return;
+        }
         timer_.stop();
         if (!failure_reported_) {
             failure_reported_ = true;
             emit negotiation_failed();
         }
         socket_->abort();
+        finish_connection();
+    }
+
+    /// Retires the connection when its socket reports disconnection.
+    void finish_if_unconnected()
+    {
+        if (socket_->state() == QAbstractSocket::UnconnectedState) {
+            finish_connection();
+        }
+    }
+
+    /// Emits terminal cleanup exactly once.
+    void finish_connection()
+    {
+        if (finished_) {
+            return;
+        }
+        finished_ = true;
+        emit finished(this);
     }
 
     quint64 id_;
@@ -130,6 +169,7 @@ private:
     QTimer timer_;
     bool announced_        = false;
     bool failure_reported_ = false;
+    bool finished_         = false;
 };
 
 TlsServer::TlsServer(QObject* parent)
@@ -228,7 +268,7 @@ void TlsServer::incomingConnection(qintptr descriptor)
     }
 
     const quint64 id = next_connection_id_++;
-    auto* connection = new TlsConnection(descriptor, id, configuration_, ssl_configuration_, this);
+    auto* connection = new TlsConnection(id, configuration_, ssl_configuration_, this);
     connections_.insert(id, connection);
     connect(connection, &TlsConnection::established, this, [this](TlsConnection* connection) {
         emit client_connected(connection->id(), connection->peer_address(), connection->peer_port());
@@ -247,6 +287,7 @@ void TlsServer::incomingConnection(qintptr descriptor)
         }
         finish_close();
     });
+    connection->start(descriptor, configuration_.handshake_timeout);
 }
 
 void TlsServer::finish_close()

@@ -88,15 +88,27 @@ FramedSocket::FramedSocket(QSslSocket* socket, SessionOptions options, QObject* 
     connect(socket_, &QSslSocket::disconnected, this, &FramedSocket::socket_disconnected);
 }
 
+std::optional<ProtocolError> FramedSocket::set_options(const SessionOptions& options)
+{
+    if (active_ || closing_) {
+        return make_error(ErrorCode::InvalidRequest, QStringLiteral("Session options cannot change while the connection is active or closing"));
+    }
+    if (const auto error = validate_session_options(options); error.has_value()) {
+        return error;
+    }
+    options_ = options;
+    return std::nullopt;
+}
+
 std::optional<ProtocolError> FramedSocket::start()
 {
-    if (active_) {
-        return make_error(ErrorCode::InvalidRequest, QStringLiteral("The session is already active"));
+    if (active_ || closing_) {
+        return make_error(ErrorCode::InvalidRequest, QStringLiteral("The session is already active or closing"));
     }
     if (const auto error = validate_session_options(options_); error.has_value()) {
         return error;
     }
-    if (!socket_->isEncrypted()) {
+    if (!socket_->isEncrypted() || socket_->state() != QAbstractSocket::ConnectedState) {
         return make_error(ErrorCode::InvalidRequest, QStringLiteral("The socket has not completed TLS negotiation"));
     }
 
@@ -125,15 +137,19 @@ std::optional<ProtocolError> FramedSocket::send(const Envelope& envelope)
         return make_error(ErrorCode::Unavailable, QStringLiteral("The outbound queue is full"));
     }
 
+    const qsizetype previous_pending = pending_output_bytes();
     output_.push_back(*frame);
     queued_output_bytes_ += frame->size();
+    if (previous_pending != pending_output_bytes()) {
+        emit pending_output_changed(pending_output_bytes());
+    }
     flush_output();
     return std::nullopt;
 }
 
 void FramedSocket::close()
 {
-    if (closing_) {
+    if (closing_ || socket_->state() == QAbstractSocket::UnconnectedState) {
         return;
     }
     closing_ = true;
@@ -219,13 +235,16 @@ void FramedSocket::fail(ProtocolError error)
         return;
     }
     active_ = false;
-    emit protocol_error(error);
-
     ProtocolError encoding_error;
-    const auto frame = protocol::encode_envelope(error_envelope(error), &encoding_error);
+    const qsizetype previous_pending = pending_output_bytes();
+    const auto frame                 = protocol::encode_envelope(error_envelope(error), &encoding_error);
     if (frame.has_value() && frame->size() <= options_.maximum_pending_output - pending_output_bytes()) {
         output_.push_back(*frame);
         queued_output_bytes_ += frame->size();
+    }
+    emit protocol_error(error);
+    if (previous_pending != pending_output_bytes()) {
+        emit pending_output_changed(pending_output_bytes());
     }
     close();
 }

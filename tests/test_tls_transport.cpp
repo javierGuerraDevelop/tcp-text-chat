@@ -146,6 +146,12 @@ bool receive_envelopes(QSslSocket& socket, FrameDecoder& decoder, QList<Envelope
     return envelopes.size() == expected;
 }
 
+/// Exposes the protected descriptor entry point for deterministic failure testing.
+class TestableTlsServer : public TlsServer {
+public:
+    using TlsServer::incomingConnection;
+};
+
 } // namespace
 
 /// Verifies verified TLS transport, framing integration, and bounded session behavior.
@@ -165,6 +171,12 @@ private slots:
     void exchangesLargeEnvelope();
     /// Returns to a disconnected state after a refused connection.
     void disconnectsAfterConnectionFailure();
+    /// Removes failed descriptor connections before enforcing the capacity limit.
+    void recoversFromInvalidIncomingDescriptor();
+    /// Prevents connected callbacks after a state observer initiates shutdown.
+    void handlesConnectedStateReentrancy();
+    /// Applies the client's configured output bound rather than the default.
+    void honorsClientOutputLimit();
     /// Provides independently verifiable certificate rejection cases.
     void rejectsInvalidServerCertificates_data();
     /// Rejects expired, untrusted, and wrong-host server identities.
@@ -175,6 +187,8 @@ private slots:
     void answersFragmentedAndCoalescedPings();
     /// Returns a framing error before closing a malformed TLS stream.
     void reportsInvalidFramesBeforeClosing();
+    /// Delivers an error when its observer immediately closes the connection.
+    void deliversErrorBeforeObserverInitiatedClose();
     /// Applies backpressure and prevents sends during graceful shutdown.
     void boundsPendingOutputAndClosesGracefully();
     /// Flushes a final application message during client shutdown.
@@ -289,6 +303,77 @@ void TlsTransportTest::disconnectsAfterConnectionFailure()
     QCOMPARE(client.state(), TlsClient::State::Disconnected);
 }
 
+void TlsTransportTest::recoversFromInvalidIncomingDescriptor()
+{
+    TestableTlsServer server;
+    TlsServerConfiguration options      = server_configuration(QStringLiteral("trusted_server"));
+    options.maximum_connections         = 1;
+    options.maximum_pending_connections = 1;
+    QVERIFY(!server.start(options).has_value());
+    QSignalSpy errors(&server, &TlsServer::connection_error);
+
+    server.incomingConnection(-1);
+    QCOMPARE(errors.size(), 1);
+    QCOMPARE(server.active_connections(), 0);
+
+    TlsClient client;
+    QSignalSpy connected(&client, &TlsClient::connected);
+    QSignalSpy client_errors(&client, &TlsClient::error);
+    QVERIFY(!client.connect_to_host(client_configuration(server.serverPort())).has_value());
+    const bool established = connected.wait(3000);
+    QVERIFY2(established,
+        qPrintable(client_errors.isEmpty() ? QStringLiteral("The client did not connect") : client_errors.last().at(0).toString()));
+    QCOMPARE(errors.size(), 1);
+    QTRY_COMPARE(server.active_connections(), 1);
+}
+
+void TlsTransportTest::handlesConnectedStateReentrancy()
+{
+    TlsServer server;
+    QVERIFY(!server.start(server_configuration(QStringLiteral("trusted_server"))).has_value());
+    TlsClient client;
+    QSignalSpy states(&client, &TlsClient::state_changed);
+    QSignalSpy connected(&client, &TlsClient::connected);
+    QSignalSpy disconnected(&client, &TlsClient::disconnected);
+    QObject::connect(&client, &TlsClient::state_changed, &client, [&client](TlsClient::State state) {
+        if (state == TlsClient::State::Connected) {
+            client.disconnect_from_host();
+        }
+    });
+
+    QVERIFY(!client.connect_to_host(client_configuration(server.serverPort())).has_value());
+    QTRY_COMPARE(disconnected.size(), 1);
+    QCOMPARE(connected.size(), 0);
+    QCOMPARE(client.state(), TlsClient::State::Disconnected);
+    int disconnected_transitions = 0;
+    for (const auto& arguments : states) {
+        if (qvariant_cast<TlsClient::State>(arguments.at(0)) == TlsClient::State::Disconnected) {
+            ++disconnected_transitions;
+        }
+    }
+    QCOMPARE(disconnected_transitions, 1);
+}
+
+void TlsTransportTest::honorsClientOutputLimit()
+{
+    TlsServer server;
+    QVERIFY(!server.start(server_configuration(QStringLiteral("trusted_server"))).has_value());
+    TlsClient client;
+    TlsClientConfiguration options         = client_configuration(server.serverPort());
+    options.session.maximum_pending_output = tcp_chat::protocol::maximum_buffered_size;
+    QSignalSpy connected(&client, &TlsClient::connected);
+    QVERIFY(!client.connect_to_host(options).has_value());
+    QVERIFY(connected.wait(3000));
+
+    Envelope message;
+    message.type    = MessageType::Pong;
+    message.payload = QJsonObject { { QStringLiteral("text"), QString(60000, QLatin1Char('x')) } };
+    QVERIFY(!client.send(message).has_value());
+    const auto backpressure = client.send(message);
+    QVERIFY(backpressure.has_value());
+    QCOMPARE(backpressure->code, ErrorCode::Unavailable);
+}
+
 void TlsTransportTest::rejectsInvalidServerCertificates_data()
 {
     QTest::addColumn<QString>("identity");
@@ -385,6 +470,26 @@ void TlsTransportTest::reportsInvalidFramesBeforeClosing()
     QTRY_COMPARE(socket.state(), QAbstractSocket::UnconnectedState);
 }
 
+void TlsTransportTest::deliversErrorBeforeObserverInitiatedClose()
+{
+    TlsServer server;
+    QVERIFY(!server.start(server_configuration(QStringLiteral("trusted_server"))).has_value());
+    QObject::connect(&server, &TlsServer::client_protocol_error, &server,
+        [&server](quint64 connection_id, const ProtocolError&) { server.disconnect_client(connection_id); });
+    QSslSocket socket;
+    QVERIFY(connect_raw_socket(socket, server.serverPort()));
+    QByteArray empty_frame;
+    empty_frame.resize(4);
+
+    QCOMPARE(socket.write(empty_frame), qint64(empty_frame.size()));
+    FrameDecoder decoder;
+    QList<Envelope> responses;
+    QVERIFY(receive_envelopes(socket, decoder, responses, 1));
+    QCOMPARE(responses.at(0).type, MessageType::Error);
+    QCOMPARE(responses.at(0).payload.value(QStringLiteral("code")).toString(), QStringLiteral("invalid_frame"));
+    QTRY_COMPARE(socket.state(), QAbstractSocket::UnconnectedState);
+}
+
 void TlsTransportTest::boundsPendingOutputAndClosesGracefully()
 {
     TlsServer server;
@@ -402,12 +507,17 @@ void TlsTransportTest::boundsPendingOutputAndClosesGracefully()
     QSignalSpy pending(&session, &FramedSocket::pending_output_changed);
     QSignalSpy disconnected(&session, &FramedSocket::disconnected);
 
+    Envelope message;
+    message.type    = MessageType::Pong;
+    message.payload = QJsonObject { { QStringLiteral("text"), QString(60000, QLatin1Char('x')) } };
+    QVERIFY(!session.send(message).has_value());
+    QVERIFY(!pending.isEmpty());
+    QVERIFY(pending.first().at(0).toLongLong() > 0);
+    QCOMPARE(pending.last().at(0).toLongLong(), session.pending_output_bytes());
+
     std::optional<ProtocolError> backpressure;
     for (int index = 0; index < 128 && !backpressure.has_value(); ++index) {
-        Envelope message;
-        message.type    = MessageType::Pong;
-        message.payload = QJsonObject { { QStringLiteral("text"), QString(60000, QLatin1Char('x')) } };
-        backpressure    = session.send(message);
+        backpressure = session.send(message);
         QVERIFY(session.pending_output_bytes() <= session_options.maximum_pending_output);
     }
     QVERIFY(backpressure.has_value());
@@ -419,8 +529,11 @@ void TlsTransportTest::boundsPendingOutputAndClosesGracefully()
     session.close();
     const Envelope closing_message;
     QCOMPARE(session.send(closing_message)->code, ErrorCode::InvalidRequest);
+    QCOMPARE(session.start()->code, ErrorCode::InvalidRequest);
+    QVERIFY(!session.is_active());
     QVERIFY(disconnected.wait(3000));
     QCOMPARE(session.pending_output_bytes(), 0);
+    QCOMPARE(pending.last().at(0).toLongLong(), 0);
 }
 
 void TlsTransportTest::flushesClientOutputDuringShutdown()

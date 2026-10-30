@@ -55,6 +55,9 @@ std::optional<QString> TlsClient::connect_to_host(const TlsClientConfiguration& 
     }
 
     socket_->abort();
+    if (const auto error = session_.set_options(configuration.session); error.has_value()) {
+        return error->message;
+    }
     certificate_error_    = false;
     QSslConfiguration ssl = QSslConfiguration::defaultConfiguration();
     ssl.setProtocol(QSsl::TlsV1_2OrLater);
@@ -122,12 +125,14 @@ void TlsClient::fail(const QString& message)
 void TlsClient::encrypted()
 {
     handshake_timer_.stop();
-    set_state(State::Connected);
     if (const auto error = session_.start(); error.has_value()) {
         fail(error->message);
         return;
     }
-    emit connected();
+    set_state(State::Connected);
+    if (state_ == State::Connected && session_.is_active()) {
+        emit connected();
+    }
 }
 
 void TlsClient::certificate_failed()

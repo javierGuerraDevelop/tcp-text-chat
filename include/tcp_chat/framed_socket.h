@@ -57,6 +57,9 @@ public:
     /// Wraps a socket owned by the caller; the socket must outlive this object.
     explicit FramedSocket(QSslSocket* socket, SessionOptions options = SessionOptions { }, QObject* parent = nullptr);
 
+    /// Applies validated limits while the session is inactive and not closing.
+    std::optional<protocol::ProtocolError> set_options(const SessionOptions& options);
+
     /// Begins processing an encrypted socket after validating its session limits.
     std::optional<protocol::ProtocolError> start();
 
