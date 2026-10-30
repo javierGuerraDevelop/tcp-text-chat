@@ -42,6 +42,10 @@ private slots:
     void handlesSemicolonsInSqlScripts();
     /// Checks rejection of a missing intermediate version.
     void rejectsMigrationGaps();
+    /// Checks rejection of two files with the same numeric version.
+    void rejectsDuplicateVersions();
+    /// Checks the supported in-memory journal-mode exception.
+    void allowsMemoryDatabaseWithoutWal();
 };
 
 void MigrationRunnerTest::appliesInitialSchema()
@@ -79,6 +83,9 @@ void MigrationRunnerTest::appliesInitialSchema()
     QVERIFY(query.exec(QStringLiteral("PRAGMA journal_mode")));
     QVERIFY(query.next());
     QCOMPARE(query.value(0).toString().toLower(), QStringLiteral("wal"));
+    QVERIFY(query.exec(QStringLiteral("PRAGMA busy_timeout")));
+    QVERIFY(query.next());
+    QCOMPARE(query.value(0).toInt(), 5000);
 }
 
 void MigrationRunnerTest::repeatsWithoutReapplying()
@@ -184,6 +191,39 @@ void MigrationRunnerTest::rejectsMigrationGaps()
     const auto result = tcp_chat::storage::MigrationRunner::migrate(connection.database(), migrations.path(), 1000, &error);
     QVERIFY(!result.has_value());
     QCOMPARE(error.code, tcp_chat::storage::StorageErrorCode::InvalidMigration);
+}
+
+void MigrationRunnerTest::rejectsDuplicateVersions()
+{
+    QTemporaryDir temporary;
+    QVERIFY(temporary.isValid());
+    QDir migrations(temporary.filePath(QStringLiteral("migrations")));
+    QVERIFY(migrations.mkpath(QStringLiteral(".")));
+    QVERIFY(write_script(migrations.filePath(QStringLiteral("0001_first.sql")),
+        QByteArrayLiteral("CREATE TABLE first_table(value TEXT);")));
+    QVERIFY(write_script(migrations.filePath(QStringLiteral("0001_second.sql")),
+        QByteArrayLiteral("CREATE TABLE second_table(value TEXT);")));
+
+    tcp_chat::testing::TestDatabase connection(temporary.filePath(QStringLiteral("chat.sqlite")));
+    QVERIFY(connection.database().open());
+    tcp_chat::storage::StorageError error;
+    const auto result = tcp_chat::storage::MigrationRunner::migrate(connection.database(), migrations.path(), 1000, &error);
+    QVERIFY(!result.has_value());
+    QCOMPARE(error.code, tcp_chat::storage::StorageErrorCode::InvalidMigration);
+}
+
+void MigrationRunnerTest::allowsMemoryDatabaseWithoutWal()
+{
+    tcp_chat::testing::TestDatabase connection(QStringLiteral(":memory:"));
+    QVERIFY(connection.database().open());
+    const auto result = tcp_chat::storage::MigrationRunner::migrate(
+        connection.database(), tcp_chat::testing::migration_directory(), 1000);
+    QVERIFY(result.has_value());
+
+    QSqlQuery query(connection.database());
+    QVERIFY(query.exec(QStringLiteral("PRAGMA journal_mode")));
+    QVERIFY(query.next());
+    QCOMPARE(query.value(0).toString().toLower(), QStringLiteral("memory"));
 }
 
 QTEST_GUILESS_MAIN(MigrationRunnerTest)

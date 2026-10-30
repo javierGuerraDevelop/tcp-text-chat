@@ -43,6 +43,7 @@ namespace {
         }
 
         QList<MigrationFile> files;
+        int previous_version = 0;
         const QRegularExpression pattern(QStringLiteral("^(\\d{4})_.+\\.sql$"));
         for (const QString& name : names) {
             const auto match = pattern.match(name);
@@ -57,6 +58,11 @@ namespace {
                 detail::set_error(error, StorageErrorCode::InvalidMigration, QStringLiteral("Migration version is invalid"));
                 return std::nullopt;
             }
+            if (version == previous_version) {
+                detail::set_error(error, StorageErrorCode::InvalidMigration, QStringLiteral("Duplicate migration version detected"));
+                return std::nullopt;
+            }
+            previous_version = version;
             files.append(MigrationFile { version, migration_directory.filePath(name) });
         }
         return files;
@@ -176,6 +182,23 @@ namespace {
         return script;
     }
 
+    /// Enables WAL and permits only the intentional in-memory journal-mode exception.
+    bool enable_wal(QSqlDatabase& database, StorageError* error)
+    {
+        QSqlQuery query(database);
+        if (!query.exec(QStringLiteral("PRAGMA journal_mode = WAL")) || !query.next()) {
+            detail::set_query_error(error, query.lastError(), QStringLiteral("Could not configure SQLite journal mode"));
+            return false;
+        }
+
+        const QString mode = query.value(0).toString().toLower();
+        if (mode != QStringLiteral("wal") && mode != QStringLiteral("memory")) {
+            detail::set_error(error, StorageErrorCode::OpenFailed, QStringLiteral("SQLite WAL mode is unavailable for this database"));
+            return false;
+        }
+        return true;
+    }
+
     /// Returns the greatest applied schema version, or zero for a new database.
     std::optional<int> current_version(QSqlDatabase& database, StorageError* error)
     {
@@ -204,7 +227,7 @@ std::optional<MigrationResult> MigrationRunner::migrate(
 
     if (!detail::execute(database, QStringLiteral("PRAGMA foreign_keys = ON"), error)
         || !detail::execute(database, QStringLiteral("PRAGMA busy_timeout = 5000"), error)
-        || !detail::execute(database, QStringLiteral("PRAGMA journal_mode = WAL"), error)
+        || !enable_wal(database, error)
         || !detail::execute(database,
             QStringLiteral("CREATE TABLE IF NOT EXISTS schema_migrations ("
                            "version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)"),
