@@ -3,7 +3,8 @@
 A C++20 desktop text chat project with a Qt 6 client, a headless server, TLS
 transport, and SQLite persistence. The first release provides one shared room,
 username/password accounts, and Google/GitHub sign-in. The current targets establish
-the common, client, server, and test build boundaries.
+the common, client, server, and test build boundaries. The versioned TCP wire
+contract is documented in `docs/protocol.md`.
 
 ## Requirements
 
