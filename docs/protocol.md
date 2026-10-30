@@ -7,7 +7,28 @@ affected tests whenever the contract changes.
 ## Transport and framing
 
 Messages travel over a TLS-protected TCP byte stream. TLS protects transport data;
-it does not replace message validation.
+it does not replace message validation. Both endpoints require TLS 1.2 or newer and
+allow TLS 1.3 negotiation. There is no plaintext fallback.
+
+Servers load a PEM certificate chain and private key from explicit configuration.
+Clients verify the certificate chain and the configured peer name against system
+trust roots or an explicit private-CA PEM file. Certificate validation failures
+terminate negotiation. Server configuration bounds concurrent connections, pending
+TCP connections, and TLS negotiation time.
+
+After negotiation, each endpoint sends a `ping` every 15 seconds by default and
+closes the connection after 45 seconds without incoming network activity. These
+intervals are configurable and measured with a monotonic clock. Any incoming data
+resets the inactivity deadline; a valid ping receives an automatic pong with the
+same request ID.
+
+Each socket accepts at most 262,160 bytes of queued plaintext and encrypted output
+by default. A sender whose next frame would exceed that bound must wait for output
+to drain; the local send operation reports `unavailable` rather than growing the
+queue. Graceful shutdown stops new sends, flushes accepted output, and aborts the
+socket if the configured three-second shutdown deadline expires. A protocol or
+framing failure sends an `error` envelope when output capacity permits before
+closing the connection.
 
 Each frame contains a four-byte unsigned big-endian payload length followed by that
 many payload bytes. The length excludes the four-byte prefix.

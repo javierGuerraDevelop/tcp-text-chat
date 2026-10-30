@@ -28,8 +28,8 @@ For Fedora:
 sudo dnf install cmake ninja-build gcc-c++ clang clang-tools-extra libasan libubsan qt6-qtbase-devel qt6-qtnetworkauth-devel libsodium-devel
 ```
 
-The OAuth implementation requires Qt NetworkAuth; the build foundation itself uses
-only Qt Core, Gui, Widgets, and Test.
+Qt Network and the system TLS backend provide encrypted client/server transport.
+The OAuth implementation will additionally require Qt NetworkAuth.
 
 ## Build and test
 
@@ -72,7 +72,9 @@ display server.
 TLS private keys, OAuth client secrets, session tokens, local databases, and `.env`
 files must never be committed. Production OAuth secrets belong only in server-side
 environment or secret-store configuration. Non-production TLS fixtures must be
-clearly isolated from deployment configuration.
+clearly isolated from deployment configuration. The keys under
+`tests/tls_fixtures/` are exclusively for offline loopback tests; never install
+their CAs or deploy them. See that directory's README for regeneration instructions.
 
 ## License
 
