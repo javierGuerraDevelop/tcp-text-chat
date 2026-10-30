@@ -1,5 +1,7 @@
 #pragma once
 
+#include "storage/migration_runner.h"
+
 #include <QAtomicInteger>
 #include <QSqlDatabase>
 #include <QString>
@@ -44,6 +46,15 @@ private:
 inline QString migration_directory()
 {
     return QStringLiteral(TCP_CHAT_SOURCE_DIR "/migrations");
+}
+
+/// Opens a test connection and applies all repository migrations.
+inline bool initialize_database(TestDatabase& connection)
+{
+    if (!connection.database().open()) {
+        return false;
+    }
+    return tcp_chat::storage::MigrationRunner::migrate(connection.database(), migration_directory(), 1000).has_value();
 }
 
 } // namespace tcp_chat::testing
