@@ -175,6 +175,8 @@ private slots:
     void recoversFromInvalidIncomingDescriptor();
     /// Prevents connected callbacks after a state observer initiates shutdown.
     void handlesConnectedStateReentrancy();
+    /// Keeps a replacement connection alive across an old abort's cleanup.
+    void reconnectsFromAbortNotification();
     /// Applies the client's configured output bound rather than the default.
     void honorsClientOutputLimit();
     /// Provides independently verifiable certificate rejection cases.
@@ -352,6 +354,34 @@ void TlsTransportTest::handlesConnectedStateReentrancy()
         }
     }
     QCOMPARE(disconnected_transitions, 1);
+}
+
+void TlsTransportTest::reconnectsFromAbortNotification()
+{
+    QTcpServer stalled_server;
+    QVERIFY(stalled_server.listen(QHostAddress::LocalHost, 0));
+    TlsServer server;
+    QVERIFY(!server.start(server_configuration(QStringLiteral("trusted_server"))).has_value());
+    TlsClient client;
+    QSignalSpy connected(&client, &TlsClient::connected);
+    QSignalSpy disconnected(&client, &TlsClient::disconnected);
+    int disconnect_notifications = 0;
+    std::optional<QString> reconnect_error;
+    QObject::connect(&client, &TlsClient::disconnected, &client, [&] {
+        if (disconnect_notifications++ == 0) {
+            reconnect_error = client.connect_to_host(client_configuration(server.serverPort()));
+        }
+    });
+
+    QVERIFY(!client.connect_to_host(client_configuration(stalled_server.serverPort())).has_value());
+    QTRY_COMPARE(client.state(), TlsClient::State::Securing);
+    client.disconnect_from_host();
+    QVERIFY(connected.wait(3000));
+    QVERIFY(!reconnect_error.has_value());
+    QCOMPARE(disconnect_notifications, 1);
+    QCOMPARE(disconnected.size(), 1);
+    QCOMPARE(client.state(), TlsClient::State::Connected);
+    QTRY_COMPARE(server.active_connections(), 1);
 }
 
 void TlsTransportTest::honorsClientOutputLimit()

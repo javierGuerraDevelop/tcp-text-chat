@@ -38,7 +38,7 @@ public:
     /// Creates a disconnected client and its parent-owned socket.
     explicit TlsClient(QObject* parent = nullptr);
 
-    /// Starts DNS, TCP, and TLS negotiation, returning local configuration errors synchronously.
+    /// Starts connection negotiation, deferring calls made during a disconnect notification.
     std::optional<QString> connect_to_host(const TlsClientConfiguration& configuration);
 
     /// Queues an envelope only after the encrypted session is established.
@@ -81,8 +81,10 @@ private:
     QSslSocket* const socket_;
     transport::FramedSocket session_;
     QTimer handshake_timer_;
-    State state_            = State::Disconnected;
-    bool certificate_error_ = false;
+    State state_                     = State::Disconnected;
+    bool certificate_error_          = false;
+    bool handling_disconnected_      = false;
+    bool replacement_connect_queued_ = false;
 };
 
 } // namespace tcp_chat::client

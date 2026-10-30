@@ -27,7 +27,7 @@ TlsClient::TlsClient(QObject* parent)
 
 std::optional<QString> TlsClient::connect_to_host(const TlsClientConfiguration& configuration)
 {
-    if (state_ != State::Disconnected) {
+    if (state_ != State::Disconnected || replacement_connect_queued_) {
         return QStringLiteral("The client is already connecting or connected");
     }
     if (configuration.host.trimmed().isEmpty() || configuration.port == 0) {
@@ -52,6 +52,17 @@ std::optional<QString> TlsClient::connect_to_host(const TlsClientConfiguration& 
             || std::any_of(trusted_certificates.cbegin(), trusted_certificates.cend(), std::mem_fn(&QSslCertificate::isNull))) {
             return QStringLiteral("The trusted CA certificate file could not be loaded");
         }
+    }
+
+    if (handling_disconnected_) {
+        replacement_connect_queued_ = true;
+        QTimer::singleShot(0, this, [this, configuration] {
+            replacement_connect_queued_ = false;
+            if (const auto error = connect_to_host(configuration); error.has_value()) {
+                emit this->error(*error);
+            }
+        });
+        return std::nullopt;
     }
 
     socket_->abort();
@@ -93,7 +104,9 @@ void TlsClient::disconnect_from_host()
         session_.close();
     } else {
         socket_->abort();
-        socket_disconnected();
+        if (socket_->state() == QAbstractSocket::UnconnectedState) {
+            socket_disconnected();
+        }
     }
 }
 
@@ -119,7 +132,9 @@ void TlsClient::fail(const QString& message)
     emit error(message);
     handshake_timer_.stop();
     socket_->abort();
-    socket_disconnected();
+    if (socket_->state() == QAbstractSocket::UnconnectedState) {
+        socket_disconnected();
+    }
 }
 
 void TlsClient::encrypted()
@@ -161,10 +176,12 @@ void TlsClient::socket_disconnected()
     if (state_ == State::Disconnected) {
         return;
     }
+    handling_disconnected_ = true;
     handshake_timer_.stop();
     certificate_error_ = false;
     set_state(State::Disconnected);
     emit disconnected();
+    handling_disconnected_ = false;
 }
 
 } // namespace tcp_chat::client
