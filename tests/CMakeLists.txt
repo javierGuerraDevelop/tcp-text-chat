@@ -34,6 +34,26 @@ target_link_libraries(tcp_chat_frame_decoder_tests
 )
 tcp_chat_configure_target(tcp_chat_frame_decoder_tests)
 
+function(tcp_chat_add_storage_test target source test_name)
+    add_executable(${target} ${source})
+    target_link_libraries(${target}
+        PRIVATE
+            tcp_chat::storage
+            Qt6::Test
+    )
+    target_compile_definitions(
+        ${target}
+        PRIVATE TCP_CHAT_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+    )
+    tcp_chat_configure_target(${target})
+    add_test(NAME ${test_name} COMMAND ${target})
+endfunction()
+
+tcp_chat_add_storage_test(tcp_chat_migration_tests test_migration_runner.cpp migrations)
+tcp_chat_add_storage_test(tcp_chat_account_tests test_account_repository.cpp accounts)
+tcp_chat_add_storage_test(tcp_chat_session_tests test_session_repository.cpp sessions)
+tcp_chat_add_storage_test(tcp_chat_message_tests test_message_repository.cpp messages)
+tcp_chat_add_storage_test(tcp_chat_worker_tests test_database_worker.cpp database_worker)
 add_test(NAME frame_decoder COMMAND tcp_chat_frame_decoder_tests)
 add_test(NAME protocol COMMAND tcp_chat_protocol_tests)
 add_test(NAME common.version COMMAND tcp_chat_tests)
