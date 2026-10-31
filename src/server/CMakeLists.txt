@@ -1,4 +1,5 @@
 add_subdirectory(storage)
+add_subdirectory(auth)
 
 add_library(tcp_chat_server_transport STATIC
     tls_server.cpp
@@ -25,6 +26,7 @@ target_link_libraries(tcp_chat_server
     PRIVATE
         tcp_chat::server
         tcp_chat::storage
+        tcp_chat::auth
         Qt6::Core
 )
 
