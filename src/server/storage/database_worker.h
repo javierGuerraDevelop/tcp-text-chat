@@ -1,5 +1,6 @@
 #pragma once
 
+#include "records.h"
 #include "storage_error.h"
 
 #include <QObject>
@@ -30,12 +31,48 @@ public slots:
     /// Opens and migrates a database, then emits opened with a version or -1 on failure.
     void open(const QString& database_path, const QString& migrations_path, qint64 now);
 
+    /// Creates a local user and emits local_user_created with the same request ID.
+    void create_local_user(quint64 request_id, const NewLocalUser& input);
+
+    /// Finds a local user and emits local_user_found with the same request ID.
+    void find_local_user(quint64 request_id, const QString& normalized_username);
+
+    /// Finds a user by ID and emits user_found with the same request ID.
+    void find_user(quint64 request_id, qint64 user_id);
+
+    /// Creates a session and emits session_created with the same request ID.
+    void create_session(quint64 request_id, const NewSession& input);
+
+    /// Finds an active session and emits active_session_found with the same request ID.
+    void find_active_session(quint64 request_id, const QByteArray& token_digest, qint64 now);
+
+    /// Revokes a session and emits session_revoked with the same request ID.
+    void revoke_session(quint64 request_id, qint64 session_id, qint64 now);
+
     /// Closes the connection and repositories, then emits closed.
     void close();
 
 signals:
     /// Reports migration success or a typed open failure.
     void opened(qint64 current_version, const tcp_chat::storage::StorageError& error);
+    /// Returns a created user or a typed storage failure.
+    void local_user_created(quint64 request_id, const tcp_chat::storage::UserRecord& user,
+        const tcp_chat::storage::StorageError& error);
+    /// Returns a user lookup or a typed storage failure.
+    void local_user_found(quint64 request_id, const tcp_chat::storage::UserRecord& user,
+        const tcp_chat::storage::StorageError& error);
+    /// Returns a user ID lookup or a typed storage failure.
+    void user_found(quint64 request_id, const tcp_chat::storage::UserRecord& user,
+        const tcp_chat::storage::StorageError& error);
+    /// Returns a created session or a typed storage failure.
+    void session_created(quint64 request_id, const tcp_chat::storage::SessionRecord& session,
+        const tcp_chat::storage::StorageError& error);
+    /// Returns an active-session lookup or a typed storage failure.
+    void active_session_found(quint64 request_id, const tcp_chat::storage::SessionRecord& session,
+        const tcp_chat::storage::StorageError& error);
+    /// Returns a revoked session or a typed storage failure.
+    void session_revoked(quint64 request_id, const tcp_chat::storage::SessionRecord& session,
+        const tcp_chat::storage::StorageError& error);
     /// Reports that the connection has been closed.
     void closed();
 

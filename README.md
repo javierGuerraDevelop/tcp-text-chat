@@ -29,7 +29,9 @@ sudo dnf install cmake ninja-build gcc-c++ clang clang-tools-extra libasan libub
 ```
 
 Qt Network and the system TLS backend provide encrypted client/server transport.
-The OAuth implementation will additionally require Qt NetworkAuth.
+Local authentication uses Argon2id password hashes and opaque, expiring session
+tokens; only token digests are stored in SQLite. Password work runs in a bounded
+worker pool. The OAuth implementation will additionally require Qt NetworkAuth.
 
 ## Build and test
 

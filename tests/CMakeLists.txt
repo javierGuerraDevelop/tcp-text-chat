@@ -49,6 +49,21 @@ function(tcp_chat_add_storage_test target source test_name)
     add_test(NAME ${test_name} COMMAND ${target})
 endfunction()
 
+function(tcp_chat_add_auth_test target source test_name)
+    add_executable(${target} ${source})
+    target_link_libraries(${target}
+        PRIVATE
+            tcp_chat::auth
+            Qt6::Test
+    )
+    target_compile_definitions(
+        ${target}
+        PRIVATE TCP_CHAT_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+    )
+    tcp_chat_configure_target(${target})
+    add_test(NAME ${test_name} COMMAND ${target})
+endfunction()
+
 add_executable(tcp_chat_transport_tests
     test_tls_transport.cpp
 )
@@ -69,6 +84,12 @@ tcp_chat_add_storage_test(tcp_chat_account_tests test_account_repository.cpp acc
 tcp_chat_add_storage_test(tcp_chat_session_tests test_session_repository.cpp sessions)
 tcp_chat_add_storage_test(tcp_chat_message_tests test_message_repository.cpp messages)
 tcp_chat_add_storage_test(tcp_chat_worker_tests test_database_worker.cpp database_worker)
+tcp_chat_add_auth_test(tcp_chat_auth_protocol_tests test_auth_protocol.cpp auth_protocol)
+tcp_chat_add_auth_test(tcp_chat_password_tests test_password_hasher.cpp password_hasher)
+tcp_chat_add_auth_test(tcp_chat_token_tests test_session_token.cpp session_token)
+tcp_chat_add_auth_test(tcp_chat_limiter_tests test_attempt_limiter.cpp attempt_limiter)
+tcp_chat_add_auth_test(tcp_chat_authentication_tests test_authentication_service.cpp authentication_service)
+target_link_libraries(tcp_chat_authentication_tests PRIVATE tcp_chat::client)
 add_test(NAME transport COMMAND tcp_chat_transport_tests)
 add_test(NAME frame_decoder COMMAND tcp_chat_frame_decoder_tests)
 add_test(NAME protocol COMMAND tcp_chat_protocol_tests)

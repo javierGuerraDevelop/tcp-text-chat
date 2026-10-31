@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QMetaType>
 #include <QString>
 
 #include <optional>
@@ -77,3 +78,11 @@ struct MessageAppendResult {
 };
 
 } // namespace tcp_chat::storage
+
+Q_DECLARE_METATYPE(tcp_chat::storage::UserRecord)
+Q_DECLARE_METATYPE(tcp_chat::storage::NewLocalUser)
+Q_DECLARE_METATYPE(tcp_chat::storage::SessionRecord)
+Q_DECLARE_METATYPE(tcp_chat::storage::NewSession)
+Q_DECLARE_METATYPE(tcp_chat::storage::MessageRecord)
+Q_DECLARE_METATYPE(tcp_chat::storage::NewMessage)
+Q_DECLARE_METATYPE(tcp_chat::storage::MessageAppendResult)

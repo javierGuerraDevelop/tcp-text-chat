@@ -87,7 +87,7 @@ void DatabaseWorkerTest::opensAndClosesOnWorkerThread()
     QSignalSpy closed(harness.worker(), &tcp_chat::storage::DatabaseWorker::closed);
 
     QVERIFY(queue_open(harness.worker(), database_path, tcp_chat::testing::migration_directory()));
-    QVERIFY(opened.wait(5000));
+    QVERIFY(opened.wait(5000) || !opened.isEmpty());
     QCOMPARE(opened.size(), 1);
     QCOMPARE(opened.at(0).at(0).toLongLong(), 1);
     const auto error = qvariant_cast<tcp_chat::storage::StorageError>(opened.at(0).at(1));
@@ -100,7 +100,7 @@ void DatabaseWorkerTest::opensAndClosesOnWorkerThread()
     QVERIFY(query.next());
 
     QVERIFY(queue_close(harness.worker()));
-    QVERIFY(closed.wait(5000));
+    QVERIFY(closed.wait(5000) || !closed.isEmpty());
     QCOMPARE(closed.size(), 1);
     harness.worker()->thread()->quit();
     QVERIFY(harness.worker()->thread()->wait(5000));
@@ -115,14 +115,14 @@ void DatabaseWorkerTest::reopensAfterFailedOpen()
     QSignalSpy opened(harness.worker(), &tcp_chat::storage::DatabaseWorker::opened);
 
     QVERIFY(queue_open(harness.worker(), database_path, temporary.filePath(QStringLiteral("missing"))));
-    QVERIFY(opened.wait(5000));
+    QVERIFY(opened.wait(5000) || !opened.isEmpty());
     QCOMPARE(opened.size(), 1);
     QCOMPARE(opened.at(0).at(0).toLongLong(), -1);
     auto error = qvariant_cast<tcp_chat::storage::StorageError>(opened.at(0).at(1));
     QCOMPARE(error.code, tcp_chat::storage::StorageErrorCode::InvalidMigration);
 
     QVERIFY(queue_open(harness.worker(), database_path, tcp_chat::testing::migration_directory()));
-    QVERIFY(opened.wait(5000));
+    QVERIFY(opened.wait(5000) || !opened.isEmpty());
     QCOMPARE(opened.size(), 2);
     QCOMPARE(opened.at(1).at(0).toLongLong(), 1);
     error = qvariant_cast<tcp_chat::storage::StorageError>(opened.at(1).at(1));
@@ -138,9 +138,9 @@ void DatabaseWorkerTest::rejectsDuplicateOpen()
     QSignalSpy opened(harness.worker(), &tcp_chat::storage::DatabaseWorker::opened);
 
     QVERIFY(queue_open(harness.worker(), database_path, tcp_chat::testing::migration_directory()));
-    QVERIFY(opened.wait(5000));
+    QVERIFY(opened.wait(5000) || !opened.isEmpty());
     QVERIFY(queue_open(harness.worker(), database_path, tcp_chat::testing::migration_directory()));
-    QVERIFY(opened.wait(5000));
+    QVERIFY(opened.wait(5000) || !opened.isEmpty());
     QCOMPARE(opened.size(), 2);
     QCOMPARE(opened.at(1).at(0).toLongLong(), -1);
     const auto error = qvariant_cast<tcp_chat::storage::StorageError>(opened.at(1).at(1));

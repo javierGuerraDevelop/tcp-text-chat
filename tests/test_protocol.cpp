@@ -82,6 +82,11 @@ void ProtocolTest::messageTypeNames_data()
     QTest::newRow("error") << MessageType::Error << QStringLiteral("error");
     QTest::newRow("ping") << MessageType::Ping << QStringLiteral("ping");
     QTest::newRow("pong") << MessageType::Pong << QStringLiteral("pong");
+    QTest::newRow("signup") << MessageType::AuthSignUp << QStringLiteral("auth.signup");
+    QTest::newRow("login") << MessageType::AuthLogIn << QStringLiteral("auth.login");
+    QTest::newRow("logout") << MessageType::AuthLogOut << QStringLiteral("auth.logout");
+    QTest::newRow("session") << MessageType::AuthSession << QStringLiteral("auth.session");
+    QTest::newRow("authentication result") << MessageType::AuthResult << QStringLiteral("auth.result");
 }
 
 void ProtocolTest::messageTypeNames()

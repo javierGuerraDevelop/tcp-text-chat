@@ -14,6 +14,10 @@ DatabaseWorker::DatabaseWorker(QObject* parent)
     : QObject(parent)
 {
     qRegisterMetaType<tcp_chat::storage::StorageError>("tcp_chat::storage::StorageError");
+    qRegisterMetaType<tcp_chat::storage::UserRecord>("tcp_chat::storage::UserRecord");
+    qRegisterMetaType<tcp_chat::storage::NewLocalUser>("tcp_chat::storage::NewLocalUser");
+    qRegisterMetaType<tcp_chat::storage::SessionRecord>("tcp_chat::storage::SessionRecord");
+    qRegisterMetaType<tcp_chat::storage::NewSession>("tcp_chat::storage::NewSession");
 }
 
 DatabaseWorker::~DatabaseWorker()
@@ -66,6 +70,102 @@ void DatabaseWorker::open(const QString& database_path, const QString& migration
     }
 
     emit opened(result->current_version, StorageError { });
+}
+
+void DatabaseWorker::create_local_user(quint64 request_id, const NewLocalUser& input)
+{
+    StorageError error;
+    UserRecord user;
+    if (QThread::currentThread() != thread() || !accounts_) {
+        error.code    = StorageErrorCode::InvalidInput;
+        error.message = QStringLiteral("Local user creation requires an open worker connection");
+    } else {
+        const auto result = accounts_->create_local_user(input, &error);
+        if (result.has_value()) {
+            user = *result;
+        }
+    }
+    emit local_user_created(request_id, user, error);
+}
+
+void DatabaseWorker::find_local_user(quint64 request_id, const QString& normalized_username)
+{
+    StorageError error;
+    UserRecord user;
+    if (QThread::currentThread() != thread() || !accounts_) {
+        error.code    = StorageErrorCode::InvalidInput;
+        error.message = QStringLiteral("Local user lookup requires an open worker connection");
+    } else {
+        const auto result = accounts_->find_user_by_normalized_username(normalized_username, &error);
+        if (result.has_value()) {
+            user = *result;
+        }
+    }
+    emit local_user_found(request_id, user, error);
+}
+
+void DatabaseWorker::find_user(quint64 request_id, qint64 user_id)
+{
+    StorageError error;
+    UserRecord user;
+    if (QThread::currentThread() != thread() || !accounts_) {
+        error.code    = StorageErrorCode::InvalidInput;
+        error.message = QStringLiteral("User lookup requires an open worker connection");
+    } else {
+        const auto result = accounts_->find_user_by_id(user_id, &error);
+        if (result.has_value()) {
+            user = *result;
+        }
+    }
+    emit user_found(request_id, user, error);
+}
+
+void DatabaseWorker::create_session(quint64 request_id, const NewSession& input)
+{
+    StorageError error;
+    SessionRecord session;
+    if (QThread::currentThread() != thread() || !sessions_) {
+        error.code    = StorageErrorCode::InvalidInput;
+        error.message = QStringLiteral("Session creation requires an open worker connection");
+    } else {
+        const auto result = sessions_->create_session(input, &error);
+        if (result.has_value()) {
+            session = *result;
+        }
+    }
+    emit session_created(request_id, session, error);
+}
+
+void DatabaseWorker::find_active_session(quint64 request_id, const QByteArray& token_digest, qint64 now)
+{
+    StorageError error;
+    SessionRecord session;
+    if (QThread::currentThread() != thread() || !sessions_) {
+        error.code    = StorageErrorCode::InvalidInput;
+        error.message = QStringLiteral("Session lookup requires an open worker connection");
+    } else {
+        const auto result = sessions_->find_active_session(token_digest, now, &error);
+        if (result.has_value()) {
+            session = *result;
+        }
+    }
+    emit active_session_found(request_id, session, error);
+}
+
+void DatabaseWorker::revoke_session(quint64 request_id, qint64 session_id, qint64 now)
+{
+    StorageError error;
+    SessionRecord session;
+    if (QThread::currentThread() != thread() || !sessions_) {
+        error.code    = StorageErrorCode::InvalidInput;
+        error.message = QStringLiteral("Session revocation requires an open worker connection");
+    } else {
+        const auto result = sessions_->revoke_session(session_id, now, &error);
+        if (result.has_value()) {
+            session = *result;
+        }
+    }
+    emit session_revoked(request_id, session, error);
 }
 
 void DatabaseWorker::close()

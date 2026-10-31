@@ -95,8 +95,46 @@ and event types must be added to the shared registry before handlers use them.
 | `ping` | Either | Empty object |
 | `pong` | Either | Empty object; echoes `requestId` when answering a ping |
 | `error` | Either | Error object described below |
+| `auth.signup` | Client to server | Local username, password, and optional display name |
+| `auth.login` | Client to server | Local username and password |
+| `auth.logout` | Client to server | Opaque session token |
+| `auth.session` | Client to server | Opaque session token for reconnect authentication |
+| `auth.result` | Server to client | Authenticated identity or logout result |
 
 Handlers must validate message-specific payload requirements before dispatch.
+
+## Local authentication and sessions
+
+`auth.signup` accepts `username`, `password`, and an optional `displayName`. Usernames
+are trimmed, Unicode-normalized, and case-folded for uniqueness; they contain 3 to 32
+letters, numbers, marks, `.`, `_`, or `-`. Display names contain 1 to 64 printable
+characters and cannot have leading or trailing whitespace. Passwords are 8 to 1024
+UTF-8 bytes and are never logged or persisted in plaintext.
+
+`auth.login` accepts `username` and `password`. Unknown usernames, OAuth-only
+accounts, and incorrect passwords all return `invalid_credentials` with the same
+safe message. Signup returns `username_taken` when normalization collides with an
+existing account.
+
+Successful signup and login responses use `auth.result` with `user`, `sessionToken`,
+and `expiresAt`. The token is 32 cryptographically random bytes encoded as 43
+unpadded Base64URL characters. The server stores only a 32-byte digest of the token;
+the bearer value is returned to the client only when issued and is kept in memory by
+the client. `expiresAt` is UTC milliseconds since the Unix epoch. Sessions expire
+after seven days by default and can be revoked with `auth.logout`. Expiration or
+revocation also disconnects every live connection using that session; the connection
+that requested logout may remain connected in an unauthenticated state.
+
+`auth.session` presents the token to authenticate a new TLS connection. Its result
+contains `user` and `expiresAt` but no new token. A connection that is already
+authenticated cannot log in, sign up, or resume another session without logging out
+first. Logout returns `{ "revoked": true }`, including when the presented token is
+already expired or unknown. Invalid token syntax is rejected.
+
+Authentication attempts are bounded per connection and per source IP in fixed
+60-second windows. Excess attempts return `rate_limited`. Unauthenticated
+connections also have a 30-second deadline by default. Password hashing runs in a
+bounded worker pool, and each connection has a bounded number of pending operations.
 
 An error payload contains:
 
