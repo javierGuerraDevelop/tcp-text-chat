@@ -16,6 +16,11 @@ enum class MessageType {
     Error,
     Ping,
     Pong,
+    AuthSignUp,
+    AuthLogIn,
+    AuthLogOut,
+    AuthSession,
+    AuthResult,
 };
 
 /// Identifies stable error codes shared by protocol handlers and codecs.

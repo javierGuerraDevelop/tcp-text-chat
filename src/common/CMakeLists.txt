@@ -1,4 +1,5 @@
 add_library(tcp_chat_common STATIC
+    auth_protocol.cpp
     frame.cpp
     protocol.cpp
     strict_json.cpp

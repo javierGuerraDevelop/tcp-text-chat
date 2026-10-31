@@ -40,6 +40,16 @@ std::optional<QLatin1StringView> message_type_name(MessageType type) noexcept
         return QLatin1StringView { "ping" };
     case MessageType::Pong:
         return QLatin1StringView { "pong" };
+    case MessageType::AuthSignUp:
+        return QLatin1StringView { "auth.signup" };
+    case MessageType::AuthLogIn:
+        return QLatin1StringView { "auth.login" };
+    case MessageType::AuthLogOut:
+        return QLatin1StringView { "auth.logout" };
+    case MessageType::AuthSession:
+        return QLatin1StringView { "auth.session" };
+    case MessageType::AuthResult:
+        return QLatin1StringView { "auth.result" };
     }
 
     return std::nullopt;
@@ -55,6 +65,21 @@ std::optional<MessageType> message_type_from_name(QStringView name) noexcept
     }
     if (name == QLatin1StringView { "pong" }) {
         return MessageType::Pong;
+    }
+    if (name == QLatin1StringView { "auth.signup" }) {
+        return MessageType::AuthSignUp;
+    }
+    if (name == QLatin1StringView { "auth.login" }) {
+        return MessageType::AuthLogIn;
+    }
+    if (name == QLatin1StringView { "auth.logout" }) {
+        return MessageType::AuthLogOut;
+    }
+    if (name == QLatin1StringView { "auth.session" }) {
+        return MessageType::AuthSession;
+    }
+    if (name == QLatin1StringView { "auth.result" }) {
+        return MessageType::AuthResult;
     }
 
     return std::nullopt;
