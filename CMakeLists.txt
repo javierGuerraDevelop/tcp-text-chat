@@ -9,6 +9,7 @@ project(
 
 option(TCP_CHAT_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(TCP_CHAT_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+option(TCP_CHAT_ENABLE_OAUTH_SMOKE_TESTS "Build explicitly configured real OAuth provider smoke tests" OFF)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_CXX_EXTENSIONS OFF)

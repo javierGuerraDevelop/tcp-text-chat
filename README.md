@@ -34,7 +34,8 @@ tokens; only token digests are stored in SQLite. Password work runs in a bounded
 worker pool. Browser OAuth uses an HTTPS callback server, expiring flows, PKCE,
 and short-lived single-use handoffs. The client opens the system browser and keeps
 chat session tokens in memory. Provider access/refresh tokens are not persisted.
-Real Google/GitHub provider integrations may additionally use Qt NetworkAuth.
+Google and GitHub use authorization-code OAuth 2.0 with authenticated UserInfo
+APIs over Qt Network; neither provider requires an ID token for sign-in.
 
 ## Build and test
 
@@ -84,9 +85,37 @@ their CAs or deploy them. See that directory's README for regeneration instructi
 OAuth is coordinated by the server with a separately configured HTTPS callback and
 canonical provider settings. Provider secrets stay in server environment or secret
 store configuration and are never included in the desktop client. Exact redirect
-URLs, state, PKCE, and OpenID nonce checks protect browser flows. The default test
-suite uses fake providers and loopback HTTPS; real providers require their own
-configured integrations and smoke tests.
+URLs, state, PKCE, and signed-token claims where applicable protect browser flows.
+The default test suite uses fake providers and loopback HTTPS.
+
+Configure Google and GitHub independently with these server environment pairs:
+
+- `TCP_CHAT_GOOGLE_CLIENT_ID` and `TCP_CHAT_GOOGLE_CLIENT_SECRET`
+- `TCP_CHAT_GITHUB_CLIENT_ID` and `TCP_CHAT_GITHUB_CLIENT_SECRET`
+
+Both values in a pair must be nonempty. Unset pairs remain unconfigured; incomplete
+or invalid pairs fail configuration with an actionable error. Provider endpoints
+are fixed in server code, and client secrets are not placed in authorization URLs.
+Google requests only the profile scope and uses its stable UserInfo `id`. GitHub
+requests `read:user` and uses its numeric UserInfo `id`. Neither flow requests
+offline access or an ID token. Access and refresh tokens are discarded after
+UserInfo validation and are never persisted.
+
+Real-provider smoke tests are separate from the default suite. Build them with:
+
+```bash
+cmake -B build-smoke -S . -G Ninja -DTCP_CHAT_ENABLE_OAUTH_SMOKE_TESTS=ON -DTCP_CHAT_WARNINGS_AS_ERRORS=ON
+cmake --build build-smoke --target tcp_chat_oauth_smoke_tests
+```
+
+Set `TCP_CHAT_OAUTH_SMOKE=1`, `TCP_CHAT_OAUTH_SMOKE_PROVIDER` to `google` or
+`github`, and the selected provider's credential pair. Supply a fresh manually
+authorized `TCP_CHAT_OAUTH_SMOKE_CODE`, its `TCP_CHAT_OAUTH_SMOKE_VERIFIER`, and
+the exact `TCP_CHAT_OAUTH_SMOKE_REDIRECT_URI`. Then run
+`ctest --test-dir build-smoke -R '^oauth_smoke$' --output-on-failure`. These
+short-lived values and real provider responses must never be committed or logged.
+Without the explicit opt-in and complete configuration, the smoke test skips and
+makes no external request.
 
 ## License
 
