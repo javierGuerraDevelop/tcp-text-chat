@@ -209,11 +209,15 @@ void OAuthCoordinator::exchange_finished(const OAuthExchangeResult& result)
     }
     const auto flow                 = entry.value();
     const auto& configuration       = provider->configuration();
-    const QString expected_audience = configuration.audience.isEmpty() ? configuration.client_id : configuration.audience;
+    const bool signed_token         = configuration.identity_source == OAuthIdentitySource::SignedToken;
+    const QString expected_audience = signed_token
+        ? (configuration.audience.isEmpty() ? configuration.client_id : configuration.audience)
+        : QString();
     if (!result.identity.has_value() || result.identity->provider != configuration.id || result.identity->subject.isEmpty()
         || result.identity->subject.size() > 256 || result.identity->subject.trimmed() != result.identity->subject
         || std::any_of(result.identity->subject.cbegin(), result.identity->subject.cend(), [](QChar character) { return !character.isPrint(); })
         || result.identity->audience != expected_audience
+        || (!signed_token && !result.identity->issuer.isEmpty())
         || (!configuration.issuer.isEmpty() && result.identity->issuer != configuration.issuer)
         || (configuration.use_nonce
             && !constant_time_equal(result.identity->nonce, flow->nonce))

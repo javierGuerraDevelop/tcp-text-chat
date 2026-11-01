@@ -146,9 +146,10 @@ bounded worker pool, and each connection has a bounded number of pending operati
 response has `status: "started"`, an opaque `flow`, an HTTPS `authorizationUrl`, and
 `expiresAt`. The desktop opens this URL in the system browser. Each flow is bound to
 its originating TLS connection, exact server HTTPS redirect URI, state, and PKCE
-verifier. OpenID flows also bind a nonce. Provider implementations must validate the
-code exchange, PKCE verifier, token signature, issuer, and audience before returning
-an identity; the coordinator independently checks the returned claims and nonce.
+verifier. Signed-token flows also bind and validate a nonce, signature, issuer, and
+audience. UserInfo flows instead obtain identity directly from the provider's
+authenticated HTTPS UserInfo API after the code exchange; no ID token is requested
+or accepted, so signed-token claims are not applicable to those identities.
 
 The client polls with `auth.oauth.status` and its `flow`. Results have status
 `pending`, `ready`, or `failed`, plus `flow` and `expiresAt`. Only `ready` includes a
