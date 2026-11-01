@@ -2,6 +2,10 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(SODIUM REQUIRED IMPORTED_TARGET libsodium)
 
 add_library(tcp_chat_auth STATIC
+    http_oauth_provider.cpp
+    http_oauth_provider.h
+    oauth_provider_factory.cpp
+    oauth_provider_factory.h
     authentication_service.cpp
     authentication_service.h
     attempt_limiter.cpp
