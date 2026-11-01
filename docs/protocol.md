@@ -100,6 +100,10 @@ and event types must be added to the shared registry before handlers use them.
 | `auth.logout` | Client to server | Opaque session token |
 | `auth.session` | Client to server | Opaque session token for reconnect authentication |
 | `auth.result` | Server to client | Authenticated identity or logout result |
+| `auth.oauth.start` | Client to server | Canonical provider identifier |
+| `auth.oauth.status` | Client to server | Opaque browser-flow handle |
+| `auth.oauth.complete` | Client to server | Flow handle and distinct single-use handoff |
+| `auth.oauth.result` | Server to client | Browser-flow state and authorized fields |
 
 Handlers must validate message-specific payload requirements before dispatch.
 
@@ -135,6 +139,36 @@ Authentication attempts are bounded per connection and per source IP in fixed
 60-second windows. Excess attempts return `rate_limited`. Unauthenticated
 connections also have a 30-second deadline by default. Password hashing runs in a
 bounded worker pool, and each connection has a bounded number of pending operations.
+
+## Browser OAuth
+
+`auth.oauth.start` accepts `{ "provider": "provider-id" }`. The `auth.oauth.result`
+response has `status: "started"`, an opaque `flow`, an HTTPS `authorizationUrl`, and
+`expiresAt`. The desktop opens this URL in the system browser. Each flow is bound to
+its originating TLS connection, exact server HTTPS redirect URI, state, and PKCE
+verifier. OpenID flows also bind a nonce. Provider implementations must validate the
+code exchange, PKCE verifier, token signature, issuer, and audience before returning
+an identity; the coordinator independently checks the returned claims and nonce.
+
+The client polls with `auth.oauth.status` and its `flow`. Results have status
+`pending`, `ready`, or `failed`, plus `flow` and `expiresAt`. Only `ready` includes a
+short-lived `handoff`. `auth.oauth.complete` presents both `flow` and `handoff` and
+returns the normal `auth.result` with a newly issued chat session. A handoff is not a
+session token and is never accepted by `auth.session`. Redemption consumes it before
+asynchronous session issuance, so it cannot be replayed. Browser HTML and callback
+responses never contain a handoff or chat session.
+
+Browser flows expire after five minutes by default; handoffs expire after one minute.
+Disconnecting cancels flows and handoffs. An active browser flow has its own bounded
+connection deadline, and status polling is separately limited to 120 requests per
+connection in a 60-second window. Provider denial, invalid or replayed state, bad
+identity claims, and expired flows fail without exposing provider responses.
+
+The server resolves only the exact `(provider, provider_subject)` identity. It never
+merges accounts by email, display name, or username. New OAuth-only users receive a
+server-generated unique username and have no local password hash. SQLite persists
+only user and provider-identity mappings, not provider tokens, flow handles, state,
+PKCE verifiers, handoffs, or plaintext chat session tokens.
 
 An error payload contains:
 

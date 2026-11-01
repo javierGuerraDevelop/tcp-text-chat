@@ -89,6 +89,7 @@ AuthenticationService::AuthenticationService(server::TlsServer* server, Authenti
     connect(worker_, &storage::DatabaseWorker::opened, this, &AuthenticationService::database_opened);
     connect(worker_, &storage::DatabaseWorker::local_user_created, this, &AuthenticationService::local_user_created);
     connect(worker_, &storage::DatabaseWorker::local_user_found, this, &AuthenticationService::local_user_found);
+    connect(worker_, &storage::DatabaseWorker::oauth_user_resolved, this, &AuthenticationService::oauth_user_resolved);
     connect(worker_, &storage::DatabaseWorker::user_found, this, &AuthenticationService::user_found);
     connect(worker_, &storage::DatabaseWorker::session_created, this, &AuthenticationService::session_created);
     connect(worker_, &storage::DatabaseWorker::active_session_found, this, &AuthenticationService::active_session_found);
@@ -123,6 +124,32 @@ std::optional<QString> AuthenticationService::start(const QString& database_path
         return QStringLiteral("Authentication limits and timeouts must be positive");
     }
 
+    if (options_.oauth_callback.has_value()) {
+        if (options_.oauth_providers.isEmpty()) {
+            return QStringLiteral("At least one OAuth provider is required when callbacks are enabled");
+        }
+        auto callback = std::make_unique<OAuthCallbackServer>();
+        if (const auto error = callback->start(*options_.oauth_callback); error.has_value()) {
+            return *error;
+        }
+        auto coordinator = std::make_unique<OAuthCoordinator>(callback->callback_url(), options_.oauth);
+        if (const auto error = coordinator->configuration_error(); error.has_value()) {
+            return *error;
+        }
+        for (const auto& provider : options_.oauth_providers) {
+            QString error;
+            if (!coordinator->add_provider(provider, &error)) {
+                return error;
+            }
+        }
+        oauth_callback_server_ = std::move(callback);
+        oauth_coordinator_     = std::move(coordinator);
+        connect(oauth_callback_server_.get(), &OAuthCallbackServer::authorization_received,
+            oauth_coordinator_.get(), &OAuthCoordinator::authorization_received);
+        connect(oauth_coordinator_.get(), &OAuthCoordinator::account_resolution_requested,
+            this, &AuthenticationService::oauth_account_requested);
+    }
+
     started_ = true;
     deadline_timer_.start();
     QMetaObject::invokeMethod(worker_, "open", Qt::QueuedConnection, Q_ARG(QString, database_path),
@@ -142,14 +169,26 @@ void AuthenticationService::check_authentication_deadlines()
     if (shutting_down_) {
         return;
     }
+    if (oauth_coordinator_ != nullptr) {
+        oauth_coordinator_->check_expirations();
+    }
+    QHash<quint64, qint64> completion_deadlines;
+    for (const auto& operation : operations_) {
+        if (operation->kind == OperationKind::OAuthComplete) {
+            completion_deadlines.insert(operation->connection_id, operation->expires_at);
+        }
+    }
     QList<quint64> expired;
     QList<quint64> expired_sessions;
     const qint64 current = now();
     for (auto it = connections_.cbegin(); it != connections_.cend(); ++it) {
+        const qint64 flow_deadline  = oauth_coordinator_ == nullptr ? 0 : oauth_coordinator_->connection_deadline(it.key());
+        const qint64 oauth_deadline = qMax(flow_deadline, completion_deadlines.value(it.key()));
         if (it->authenticated && it->session_expires_at > 0 && current >= it->session_expires_at) {
             expired_sessions.append(it.key());
         } else if (!it->authenticated && current >= it->connected_at
-            && current - it->connected_at >= options_.authentication_timeout_ms) {
+            && current - it->connected_at >= options_.authentication_timeout_ms
+            && current >= oauth_deadline) {
             expired.append(it.key());
         }
     }
@@ -216,7 +255,7 @@ void AuthenticationService::user_found(quint64 request_id, const storage::UserRe
     const storage::StorageError& error)
 {
     const auto operation = operations_.value(request_id);
-    if (!operation || operation->kind != OperationKind::Session) {
+    if (!operation || (operation->kind != OperationKind::Session && operation->kind != OperationKind::OAuthComplete)) {
         return;
     }
     if (error.code == storage::StorageErrorCode::NotFound) {
@@ -229,6 +268,10 @@ void AuthenticationService::user_found(quint64 request_id, const storage::UserRe
     }
 
     operation->user = user;
+    if (operation->kind == OperationKind::OAuthComplete) {
+        issue_session(operation);
+        return;
+    }
     protocol::AuthenticationResult result;
     result.user       = public_user(user);
     result.expires_at = operation->expires_at;
@@ -250,7 +293,7 @@ void AuthenticationService::session_created(quint64 request_id, const storage::S
     const storage::StorageError& error)
 {
     const auto operation = operations_.value(request_id);
-    if (!operation || (operation->kind != OperationKind::SignUp && operation->kind != OperationKind::LogIn)) {
+    if (!operation || (operation->kind != OperationKind::SignUp && operation->kind != OperationKind::LogIn && operation->kind != OperationKind::OAuthComplete)) {
         return;
     }
     if (error.code != storage::StorageErrorCode::None) {
@@ -355,6 +398,32 @@ void AuthenticationService::session_revoked(quint64 request_id, const storage::S
     }
 }
 
+void AuthenticationService::oauth_account_requested(quint64 flow_id, const QString& provider, const QString& subject,
+    const QString& username, const QString& normalized_username, const QString& display_name)
+{
+    if (oauth_coordinator_ == nullptr || !ready_) {
+        return;
+    }
+    storage::NewOAuthUser input;
+    input.provider            = provider;
+    input.provider_subject    = subject;
+    input.username            = username;
+    input.normalized_username = normalized_username;
+    input.display_name        = display_name;
+    input.now                 = now();
+    QMetaObject::invokeMethod(worker_, "find_or_create_oauth_user", Qt::QueuedConnection,
+        Q_ARG(quint64, flow_id), Q_ARG(tcp_chat::storage::NewOAuthUser, input));
+}
+
+void AuthenticationService::oauth_user_resolved(quint64 request_id, const storage::UserRecord& user,
+    const storage::StorageError& error)
+{
+    if (oauth_coordinator_ != nullptr) {
+        oauth_coordinator_->account_resolved(request_id, error.code == storage::StorageErrorCode::None ? user.id : 0,
+            error.code == storage::StorageErrorCode::Conflict);
+    }
+}
+
 void AuthenticationService::client_connected(quint64 connection_id, const QHostAddress& address, quint16 port)
 {
     Q_UNUSED(port);
@@ -375,7 +444,8 @@ void AuthenticationService::message_received(quint64 connection_id, const protoc
     }
     const bool is_authentication = envelope.type == protocol::MessageType::AuthSignUp
         || envelope.type == protocol::MessageType::AuthLogIn || envelope.type == protocol::MessageType::AuthLogOut
-        || envelope.type == protocol::MessageType::AuthSession;
+        || envelope.type == protocol::MessageType::AuthSession || envelope.type == protocol::MessageType::AuthOAuthStart
+        || envelope.type == protocol::MessageType::AuthOAuthStatus || envelope.type == protocol::MessageType::AuthOAuthComplete;
     if (!is_authentication) {
         return;
     }
@@ -384,7 +454,13 @@ void AuthenticationService::message_received(quint64 connection_id, const protoc
             QStringLiteral("The connection is already authenticated"));
         return;
     }
-    if (envelope.type != protocol::MessageType::AuthLogOut && !allow_attempt(*connection)) {
+    if (envelope.type == protocol::MessageType::AuthOAuthStatus && !connection->oauth_poll_limiter.allow(now())) {
+        send_error(connection_id, envelope.request_id, protocol::ErrorCode::RateLimited,
+            QStringLiteral("Too many sign-in status requests; try again later"));
+        return;
+    }
+    if (envelope.type != protocol::MessageType::AuthLogOut && envelope.type != protocol::MessageType::AuthOAuthStatus
+        && !allow_attempt(*connection)) {
         send_error(connection_id, envelope.request_id, protocol::ErrorCode::RateLimited,
             QStringLiteral("Too many authentication attempts; try again later"));
         return;
@@ -462,6 +538,83 @@ void AuthenticationService::message_received(quint64 connection_id, const protoc
         operation->token_digest = *digest;
         QMetaObject::invokeMethod(worker_, "find_active_session", Qt::QueuedConnection, Q_ARG(quint64, operation->id),
             Q_ARG(QByteArray, operation->token_digest), Q_ARG(qint64, now()));
+        return;
+    }
+    case protocol::MessageType::AuthOAuthStart:
+    case protocol::MessageType::AuthOAuthStatus:
+    case protocol::MessageType::AuthOAuthComplete: {
+        if (oauth_coordinator_ == nullptr) {
+            send_error(connection_id, envelope.request_id, protocol::ErrorCode::Unavailable,
+                QStringLiteral("OAuth sign-in is not configured"));
+            return;
+        }
+        const auto provider   = envelope.type == protocol::MessageType::AuthOAuthStart
+            ? protocol::oauth_provider_from_envelope(envelope)
+            : std::optional<QString> { };
+        const auto flow       = envelope.type == protocol::MessageType::AuthOAuthStatus
+            ? protocol::oauth_flow_from_envelope(envelope)
+            : std::optional<QString> { };
+        const auto completion = envelope.type == protocol::MessageType::AuthOAuthComplete
+            ? protocol::oauth_completion_from_envelope(envelope)
+            : std::optional<protocol::OAuthCompletionData> { };
+        if ((envelope.type == protocol::MessageType::AuthOAuthStart && !provider.has_value())
+            || (envelope.type == protocol::MessageType::AuthOAuthStatus && !flow.has_value())
+            || (envelope.type == protocol::MessageType::AuthOAuthComplete && !completion.has_value())) {
+            send_error(connection_id, envelope.request_id, protocol::ErrorCode::InvalidRequest,
+                QStringLiteral("OAuth sign-in fields are invalid"));
+            return;
+        }
+        const OperationKind kind = envelope.type == protocol::MessageType::AuthOAuthStart ? OperationKind::OAuthStart
+            : envelope.type == protocol::MessageType::AuthOAuthStatus                     ? OperationKind::OAuthStatus
+                                                                                          : OperationKind::OAuthComplete;
+        const auto operation     = new_operation(kind, connection_id, envelope.request_id, &error, &message);
+        if (!operation) {
+            send_error(connection_id, envelope.request_id, error, message);
+            return;
+        }
+        if (provider.has_value()) {
+            const auto started = oauth_coordinator_->start(connection_id, *provider, &message);
+            if (!started.has_value()) {
+                fail(operation->id, protocol::ErrorCode::Unavailable, message);
+                return;
+            }
+            protocol::OAuthResult result;
+            result.flow_handle       = started->flow_handle;
+            result.status            = QStringLiteral("started");
+            result.authorization_url = started->authorization_url.toString(QUrl::FullyEncoded);
+            result.expires_at        = started->expires_at;
+            succeed_oauth(operation->id, result);
+            return;
+        }
+        if (flow.has_value()) {
+            const auto status = oauth_coordinator_->status(connection_id, *flow);
+            if (!status.has_value()) {
+                fail(operation->id, protocol::ErrorCode::InvalidRequest, QStringLiteral("The sign-in flow is no longer active"));
+                return;
+            }
+            protocol::OAuthResult result;
+            result.flow_handle = *flow;
+            result.status      = status->status == OAuthFlowStatus::Ready ? QStringLiteral("ready")
+                : status->status == OAuthFlowStatus::Failed               ? QStringLiteral("failed")
+                                                                          : QStringLiteral("pending");
+            result.handoff     = status->status == OAuthFlowStatus::Ready ? std::optional<QString> { status->handoff } : std::nullopt;
+            result.expires_at  = status->expires_at;
+            succeed_oauth(operation->id, result);
+            return;
+        }
+        const auto user_id = oauth_coordinator_->redeem(connection_id, completion->flow_handle, completion->handoff);
+        if (!user_id.has_value()) {
+            fail(operation->id, protocol::ErrorCode::InvalidCredentials, QStringLiteral("Sign-in could not be completed"));
+            return;
+        }
+        if (now() > std::numeric_limits<qint64>::max() - options_.authentication_timeout_ms) {
+            fail(operation->id, protocol::ErrorCode::Unavailable, QStringLiteral("Session creation is unavailable"));
+            return;
+        }
+        operation->user.id    = *user_id;
+        operation->expires_at = now() + options_.authentication_timeout_ms;
+        QMetaObject::invokeMethod(worker_, "find_user", Qt::QueuedConnection,
+            Q_ARG(quint64, operation->id), Q_ARG(qint64, *user_id));
         return;
     }
     default:
@@ -585,6 +738,29 @@ void AuthenticationService::succeed(quint64 operation_id, const protocol::Authen
     }
 }
 
+void AuthenticationService::succeed_oauth(quint64 operation_id, const protocol::OAuthResult& result)
+{
+    const auto operation = operations_.take(operation_id);
+    if (!operation || !connections_.contains(operation->connection_id)) {
+        return;
+    }
+    const auto payload = protocol::oauth_result_to_json(result);
+    if (!payload.has_value()) {
+        send_error(operation->connection_id, operation->request_id, protocol::ErrorCode::InternalError,
+            QStringLiteral("OAuth result could not be encoded"));
+        return;
+    }
+    const auto connection = connections_.find(operation->connection_id);
+    if (connection->pending > 0) {
+        --connection->pending;
+    }
+    protocol::Envelope envelope;
+    envelope.type       = protocol::MessageType::AuthOAuthResult;
+    envelope.request_id = operation->request_id;
+    envelope.payload    = *payload;
+    server_->send(operation->connection_id, envelope);
+}
+
 void AuthenticationService::fail(quint64 operation_id, protocol::ErrorCode code, const QString& message)
 {
     const auto operation = operations_.take(operation_id);
@@ -653,6 +829,9 @@ bool AuthenticationService::allow_attempt(Connection& connection)
 
 void AuthenticationService::cancel_connection(quint64 connection_id)
 {
+    if (oauth_coordinator_ != nullptr) {
+        oauth_coordinator_->cancel_connection(connection_id);
+    }
     connections_.remove(connection_id);
     for (auto it = operations_.begin(); it != operations_.end();) {
         if (it.value()->connection_id == connection_id) {
@@ -703,6 +882,8 @@ void AuthenticationService::shutdown()
     shutting_down_ = true;
     deadline_timer_.stop();
     operations_.clear();
+    oauth_callback_server_.reset();
+    oauth_coordinator_.reset();
     hash_pool_.clear();
     hash_pool_.waitForDone();
     if (worker_ != nullptr) {

@@ -1,6 +1,7 @@
 #include "tcp_chat/auth_protocol.h"
 
 #include <QJsonObject>
+#include <QUrl>
 
 #include <algorithm>
 #include <cmath>
@@ -269,6 +270,119 @@ std::optional<AuthenticationResult> authentication_result_from_envelope(const En
             return std::nullopt;
         }
         result.session_token = *token;
+    }
+    return result;
+}
+
+std::optional<QString> oauth_provider_from_envelope(const Envelope& envelope, ProtocolError* error)
+{
+    clear_error(error);
+    if (!valid_payload(envelope, MessageType::AuthOAuthStart, { QStringLiteral("provider") }, error)) {
+        return std::nullopt;
+    }
+    const auto provider = string_field(envelope.payload, QStringLiteral("provider"), 32, error);
+    if (!provider.has_value() || provider->front() < QLatin1Char('a') || provider->front() > QLatin1Char('z')
+        || !std::all_of(provider->cbegin(), provider->cend(), [](QChar character) {
+               return (character >= QLatin1Char('a') && character <= QLatin1Char('z'))
+                   || (character >= QLatin1Char('0') && character <= QLatin1Char('9')) || character == QLatin1Char('_')
+                   || character == QLatin1Char('-');
+           })) {
+        set_error(error, QStringLiteral("OAuth provider is invalid"));
+        return std::nullopt;
+    }
+    return provider;
+}
+
+std::optional<QString> oauth_flow_from_envelope(const Envelope& envelope, ProtocolError* error)
+{
+    clear_error(error);
+    if (!valid_payload(envelope, MessageType::AuthOAuthStatus, { QStringLiteral("flow") }, error)) {
+        return std::nullopt;
+    }
+    const auto flow = string_field(envelope.payload, QStringLiteral("flow"), issued_session_token_length, error);
+    if (!flow.has_value() || !valid_issued_token(*flow)) {
+        set_error(error, QStringLiteral("OAuth flow handle is invalid"));
+        return std::nullopt;
+    }
+    return flow;
+}
+
+std::optional<OAuthCompletionData> oauth_completion_from_envelope(const Envelope& envelope, ProtocolError* error)
+{
+    clear_error(error);
+    if (!valid_payload(envelope, MessageType::AuthOAuthComplete, { QStringLiteral("flow"), QStringLiteral("handoff") }, error)) {
+        return std::nullopt;
+    }
+    const auto flow    = string_field(envelope.payload, QStringLiteral("flow"), issued_session_token_length, error);
+    const auto handoff = string_field(envelope.payload, QStringLiteral("handoff"), issued_session_token_length, error);
+    if (!flow.has_value() || !handoff.has_value() || !valid_issued_token(*flow) || !valid_issued_token(*handoff)) {
+        set_error(error, QStringLiteral("OAuth completion credentials are invalid"));
+        return std::nullopt;
+    }
+    return OAuthCompletionData { *flow, *handoff };
+}
+
+std::optional<QJsonObject> oauth_result_to_json(const OAuthResult& result, ProtocolError* error)
+{
+    clear_error(error);
+    const bool started = result.status == QStringLiteral("started");
+    const bool ready   = result.status == QStringLiteral("ready");
+    if (!valid_issued_token(result.flow_handle) || result.expires_at < 0 || result.expires_at > 9007199254740991LL
+        || (!started && !ready && result.status != QStringLiteral("pending") && result.status != QStringLiteral("failed"))
+        || result.authorization_url.has_value() != started || result.handoff.has_value() != ready
+        || (ready && !valid_issued_token(*result.handoff))) {
+        set_error(error, QStringLiteral("OAuth result fields are invalid"));
+        return std::nullopt;
+    }
+    if (started) {
+        const QUrl url(*result.authorization_url);
+        if (!url.isValid() || url.toString().size() > 2048 || url.scheme() != QStringLiteral("https")
+            || url.host().isEmpty() || !url.userInfo().isEmpty() || url.hasFragment()) {
+            set_error(error, QStringLiteral("OAuth authorization URL is invalid"));
+            return std::nullopt;
+        }
+    }
+    QJsonObject object {
+        { QStringLiteral("flow"), result.flow_handle },
+        { QStringLiteral("status"), result.status },
+        { QStringLiteral("expiresAt"), static_cast<double>(result.expires_at) },
+    };
+    if (started) {
+        object.insert(QStringLiteral("authorizationUrl"), *result.authorization_url);
+    }
+    if (ready) {
+        object.insert(QStringLiteral("handoff"), *result.handoff);
+    }
+    return object;
+}
+
+std::optional<OAuthResult> oauth_result_from_envelope(const Envelope& envelope, ProtocolError* error)
+{
+    clear_error(error);
+    if (!valid_payload(envelope, MessageType::AuthOAuthResult,
+            { QStringLiteral("flow"), QStringLiteral("status"), QStringLiteral("authorizationUrl"),
+                QStringLiteral("handoff"), QStringLiteral("expiresAt") },
+            error)) {
+        return std::nullopt;
+    }
+    OAuthResult result;
+    const auto flow       = string_field(envelope.payload, QStringLiteral("flow"), issued_session_token_length, error);
+    const auto status     = string_field(envelope.payload, QStringLiteral("status"), 16, error);
+    const auto expires_at = timestamp_from_value(envelope.payload.value(QStringLiteral("expiresAt")), error);
+    if (!flow.has_value() || !status.has_value() || !expires_at.has_value()) {
+        return std::nullopt;
+    }
+    result.flow_handle = *flow;
+    result.status      = *status;
+    result.expires_at  = *expires_at;
+    if (envelope.payload.contains(QStringLiteral("authorizationUrl"))) {
+        result.authorization_url = string_field(envelope.payload, QStringLiteral("authorizationUrl"), 2048, error).value_or(QString());
+    }
+    if (envelope.payload.contains(QStringLiteral("handoff"))) {
+        result.handoff = string_field(envelope.payload, QStringLiteral("handoff"), issued_session_token_length, error).value_or(QString());
+    }
+    if (!oauth_result_to_json(result, error).has_value()) {
+        return std::nullopt;
     }
     return result;
 }

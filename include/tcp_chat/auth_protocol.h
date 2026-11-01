@@ -63,6 +63,32 @@ std::optional<LogInData> log_in_from_envelope(const Envelope& envelope, Protocol
 /// Decodes the opaque token carried by session authentication and logout.
 std::optional<QString> session_token_from_envelope(const Envelope& envelope, ProtocolError* error = nullptr);
 
+/// Contains the flow and one-time handoff needed to finish browser sign-in.
+struct OAuthCompletionData {
+    QString flow_handle;
+    QString handoff;
+};
+
+/// Contains a browser-flow state and any credential appropriate to that state.
+struct OAuthResult {
+    QString flow_handle;
+    QString status;
+    std::optional<QString> authorization_url;
+    std::optional<QString> handoff;
+    qint64 expires_at = 0;
+};
+
+/// Decodes a bounded canonical provider identifier.
+std::optional<QString> oauth_provider_from_envelope(const Envelope& envelope, ProtocolError* error = nullptr);
+/// Decodes the opaque flow handle used for status polling.
+std::optional<QString> oauth_flow_from_envelope(const Envelope& envelope, ProtocolError* error = nullptr);
+/// Decodes a flow handle and its distinct, single-use handoff.
+std::optional<OAuthCompletionData> oauth_completion_from_envelope(const Envelope& envelope, ProtocolError* error = nullptr);
+/// Encodes a started, pending, ready, or failed OAuth flow.
+std::optional<QJsonObject> oauth_result_to_json(const OAuthResult& result, ProtocolError* error = nullptr);
+/// Decodes a browser-flow result without treating its handoff as a session token.
+std::optional<OAuthResult> oauth_result_from_envelope(const Envelope& envelope, ProtocolError* error = nullptr);
+
 /// Encodes a public authentication result after validating its field combinations.
 std::optional<QJsonObject> authentication_result_to_json(const AuthenticationResult& result, ProtocolError* error = nullptr);
 
