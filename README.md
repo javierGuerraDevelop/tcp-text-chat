@@ -73,6 +73,18 @@ clang-format --dry-run --Werror <changed-files>
 Tests are deterministic and run without internet access, OAuth credentials, or a
 display server.
 
+## Desktop appearance
+
+Run `build/bin/tcp_chat_client` to open the Qt Widgets application shell. It provides
+welcome, connecting, chat-empty, and recoverable error states with keyboard-accessible
+controls. Authentication controls are not yet connected to the server.
+
+The **Appearance** selector offers Auto, Light, and Dark. Auto follows Qt's system
+color-scheme notifications without a restart, falling back to Light when the platform
+reports no preference. Fusion, a shared semantic palette, and a packaged stylesheet
+keep application colors consistent. Only the selected appearance is saved in the
+client's `QSettings`; credentials and chat session tokens are never persisted there.
+
 ## Security and configuration
 
 TLS private keys, OAuth client secrets, session tokens, local databases, and `.env`

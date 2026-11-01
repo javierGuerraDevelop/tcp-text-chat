@@ -102,6 +102,23 @@ tcp_chat_add_auth_test(tcp_chat_provider_factory_tests test_oauth_provider_facto
 if(TCP_CHAT_ENABLE_OAUTH_SMOKE_TESTS)
     tcp_chat_add_auth_test(tcp_chat_oauth_smoke_tests test_oauth_provider_smoke.cpp oauth_smoke)
 endif()
+function(tcp_chat_add_ui_test target source test_name)
+    add_executable(${target} ${source})
+    target_link_libraries(${target}
+        PRIVATE
+            tcp_chat::client_ui
+            Qt6::Test
+    )
+    tcp_chat_configure_target(${target})
+    add_test(NAME ${test_name} COMMAND ${target})
+    set_tests_properties(${test_name} PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORMTHEME=generic"
+    )
+endfunction()
+
+tcp_chat_add_ui_test(tcp_chat_theme_tests test_theme_manager.cpp theme)
+tcp_chat_add_ui_test(tcp_chat_main_window_tests test_main_window.cpp main_window)
+
 add_test(NAME transport COMMAND tcp_chat_transport_tests)
 add_test(NAME frame_decoder COMMAND tcp_chat_frame_decoder_tests)
 add_test(NAME protocol COMMAND tcp_chat_protocol_tests)
@@ -110,7 +127,7 @@ add_test(NAME client.version COMMAND tcp_chat_client --version)
 add_test(NAME server.version COMMAND tcp_chat_server --version)
 
 set_tests_properties(client.version PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORMTHEME=generic"
     PASS_REGULAR_EXPRESSION "tcp-text-chat-client ${PROJECT_VERSION}"
 )
 set_tests_properties(server.version PROPERTIES

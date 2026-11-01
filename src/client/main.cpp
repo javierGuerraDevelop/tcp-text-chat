@@ -1,12 +1,14 @@
+#include "main_window.h"
 #include "tcp_chat/version.h"
+#include "theme_manager.h"
 
+#include <QApplication>
 #include <QCommandLineParser>
-#include <QCoreApplication>
 
-/// Starts the client and processes its command-line metadata options.
+/// Starts the desktop client and applies its persisted appearance.
 int main(int argc, char* argv[])
 {
-    QCoreApplication app(argc, argv);
+    QApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("tcp-text-chat"));
     QCoreApplication::setApplicationName(QStringLiteral("tcp-text-chat-client"));
     QCoreApplication::setApplicationVersion(tcp_chat::application_version());
@@ -17,5 +19,8 @@ int main(int argc, char* argv[])
     parser.addVersionOption();
     parser.process(app);
 
-    return 0;
+    tcp_chat::client::ThemeManager theme_manager(app);
+    tcp_chat::client::MainWindow window(theme_manager);
+    window.show();
+    return QApplication::exec();
 }
