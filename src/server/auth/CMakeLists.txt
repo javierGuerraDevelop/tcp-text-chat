@@ -6,6 +6,14 @@ add_library(tcp_chat_auth STATIC
     authentication_service.h
     attempt_limiter.cpp
     attempt_limiter.h
+    oauth_callback_server.cpp
+    oauth_callback_server.h
+    oauth_coordinator.cpp
+    oauth_coordinator.h
+    oauth_crypto.cpp
+    oauth_crypto.h
+    oauth_provider.cpp
+    oauth_provider.h
     password_hasher.cpp
     password_hasher.h
     session_token.cpp

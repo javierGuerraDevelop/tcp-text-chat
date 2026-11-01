@@ -4,6 +4,8 @@
 
 #include <QSqlQuery>
 
+#include <algorithm>
+
 namespace tcp_chat::storage {
 namespace {
 
@@ -79,6 +81,80 @@ std::optional<UserRecord> AccountRepository::create_local_user(const NewLocalUse
     }
 
     return find_user_by_id(query.lastInsertId().toLongLong(), error);
+}
+
+std::optional<UserRecord> AccountRepository::find_or_create_oauth_user(const NewOAuthUser& input, StorageError* error)
+{
+    detail::clear_error(error);
+    const bool valid_provider = !input.provider.isEmpty() && input.provider.size() <= 32
+        && input.provider.front() >= QLatin1Char('a') && input.provider.front() <= QLatin1Char('z')
+        && std::all_of(input.provider.cbegin(), input.provider.cend(), [](QChar character) {
+               return (character >= QLatin1Char('a') && character <= QLatin1Char('z'))
+                   || (character >= QLatin1Char('0') && character <= QLatin1Char('9')) || character == QLatin1Char('_')
+                   || character == QLatin1Char('-');
+           });
+    if (!valid_provider || input.provider_subject.isEmpty() || input.provider_subject.size() > 256
+        || input.provider_subject.trimmed() != input.provider_subject || input.username.isEmpty() || input.username.size() > 32
+        || input.normalized_username.isEmpty() || input.normalized_username.size() > 32 || input.display_name.isEmpty()
+        || input.display_name.size() > 64 || input.now < 0) {
+        detail::set_error(error, StorageErrorCode::InvalidInput, QStringLiteral("OAuth user fields are invalid"));
+        return std::nullopt;
+    }
+
+    detail::Transaction transaction(database_);
+    if (!transaction.begin(error)) {
+        return std::nullopt;
+    }
+    QSqlQuery query(database_);
+    query.prepare(QStringLiteral("SELECT u.id, u.username, u.normalized_username, u.display_name, u.password_hash, "
+                                 "u.created_at, u.updated_at FROM oauth_accounts AS o JOIN users AS u ON u.id = o.user_id "
+                                 "WHERE o.provider = ? AND o.provider_subject = ?"));
+    query.addBindValue(input.provider);
+    query.addBindValue(input.provider_subject);
+    if (!query.exec()) {
+        detail::set_query_error(error, query.lastError(), QStringLiteral("Could not find OAuth user"));
+        return std::nullopt;
+    }
+    if (query.next()) {
+        const UserRecord user = read_user(query);
+        if (!transaction.commit(error)) {
+            return std::nullopt;
+        }
+        return user;
+    }
+
+    query.prepare(QStringLiteral("INSERT INTO users(username, normalized_username, display_name, password_hash, "
+                                 "created_at, updated_at) VALUES(?, ?, ?, NULL, ?, ?)"));
+    query.addBindValue(input.username);
+    query.addBindValue(input.normalized_username);
+    query.addBindValue(input.display_name);
+    query.addBindValue(input.now);
+    query.addBindValue(input.now);
+    if (!query.exec()) {
+        const QString native = query.lastError().nativeErrorCode();
+        detail::set_error(error, native == QStringLiteral("19") || native == QStringLiteral("2067") ? StorageErrorCode::Conflict : StorageErrorCode::QueryFailed,
+            QStringLiteral("Could not provision OAuth user"));
+        return std::nullopt;
+    }
+    const qint64 user_id = query.lastInsertId().toLongLong();
+    query.prepare(QStringLiteral("INSERT INTO oauth_accounts(user_id, provider, provider_subject, created_at, updated_at) "
+                                 "VALUES(?, ?, ?, ?, ?)"));
+    query.addBindValue(user_id);
+    query.addBindValue(input.provider);
+    query.addBindValue(input.provider_subject);
+    query.addBindValue(input.now);
+    query.addBindValue(input.now);
+    if (!query.exec()) {
+        const QString native = query.lastError().nativeErrorCode();
+        detail::set_error(error, native == QStringLiteral("19") || native == QStringLiteral("2067") ? StorageErrorCode::Conflict : StorageErrorCode::QueryFailed,
+            QStringLiteral("Could not link OAuth identity"));
+        return std::nullopt;
+    }
+    const auto user = find_user_by_id(user_id, error);
+    if (!user.has_value() || !transaction.commit(error)) {
+        return std::nullopt;
+    }
+    return user;
 }
 
 std::optional<UserRecord> AccountRepository::find_user_by_id(qint64 id, StorageError* error)

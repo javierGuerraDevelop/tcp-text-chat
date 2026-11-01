@@ -50,6 +50,14 @@ std::optional<QLatin1StringView> message_type_name(MessageType type) noexcept
         return QLatin1StringView { "auth.session" };
     case MessageType::AuthResult:
         return QLatin1StringView { "auth.result" };
+    case MessageType::AuthOAuthStart:
+        return QLatin1StringView { "auth.oauth.start" };
+    case MessageType::AuthOAuthStatus:
+        return QLatin1StringView { "auth.oauth.status" };
+    case MessageType::AuthOAuthComplete:
+        return QLatin1StringView { "auth.oauth.complete" };
+    case MessageType::AuthOAuthResult:
+        return QLatin1StringView { "auth.oauth.result" };
     }
 
     return std::nullopt;
@@ -80,6 +88,18 @@ std::optional<MessageType> message_type_from_name(QStringView name) noexcept
     }
     if (name == QLatin1StringView { "auth.result" }) {
         return MessageType::AuthResult;
+    }
+    if (name == QLatin1StringView { "auth.oauth.start" }) {
+        return MessageType::AuthOAuthStart;
+    }
+    if (name == QLatin1StringView { "auth.oauth.status" }) {
+        return MessageType::AuthOAuthStatus;
+    }
+    if (name == QLatin1StringView { "auth.oauth.complete" }) {
+        return MessageType::AuthOAuthComplete;
+    }
+    if (name == QLatin1StringView { "auth.oauth.result" }) {
+        return MessageType::AuthOAuthResult;
     }
 
     return std::nullopt;

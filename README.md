@@ -31,7 +31,10 @@ sudo dnf install cmake ninja-build gcc-c++ clang clang-tools-extra libasan libub
 Qt Network and the system TLS backend provide encrypted client/server transport.
 Local authentication uses Argon2id password hashes and opaque, expiring session
 tokens; only token digests are stored in SQLite. Password work runs in a bounded
-worker pool. The OAuth implementation will additionally require Qt NetworkAuth.
+worker pool. Browser OAuth uses an HTTPS callback server, expiring flows, PKCE,
+and short-lived single-use handoffs. The client opens the system browser and keeps
+chat session tokens in memory. Provider access/refresh tokens are not persisted.
+Real Google/GitHub provider integrations may additionally use Qt NetworkAuth.
 
 ## Build and test
 
@@ -77,6 +80,13 @@ environment or secret-store configuration. Non-production TLS fixtures must be
 clearly isolated from deployment configuration. The keys under
 `tests/tls_fixtures/` are exclusively for offline loopback tests; never install
 their CAs or deploy them. See that directory's README for regeneration instructions.
+
+OAuth is coordinated by the server with a separately configured HTTPS callback and
+canonical provider settings. Provider secrets stay in server environment or secret
+store configuration and are never included in the desktop client. Exact redirect
+URLs, state, PKCE, and OpenID nonce checks protect browser flows. The default test
+suite uses fake providers and loopback HTTPS; real providers require their own
+configured integrations and smoke tests.
 
 ## License
 

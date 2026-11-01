@@ -16,6 +16,7 @@ DatabaseWorker::DatabaseWorker(QObject* parent)
     qRegisterMetaType<tcp_chat::storage::StorageError>("tcp_chat::storage::StorageError");
     qRegisterMetaType<tcp_chat::storage::UserRecord>("tcp_chat::storage::UserRecord");
     qRegisterMetaType<tcp_chat::storage::NewLocalUser>("tcp_chat::storage::NewLocalUser");
+    qRegisterMetaType<tcp_chat::storage::NewOAuthUser>("tcp_chat::storage::NewOAuthUser");
     qRegisterMetaType<tcp_chat::storage::SessionRecord>("tcp_chat::storage::SessionRecord");
     qRegisterMetaType<tcp_chat::storage::NewSession>("tcp_chat::storage::NewSession");
 }
@@ -102,6 +103,22 @@ void DatabaseWorker::find_local_user(quint64 request_id, const QString& normaliz
         }
     }
     emit local_user_found(request_id, user, error);
+}
+
+void DatabaseWorker::find_or_create_oauth_user(quint64 request_id, const NewOAuthUser& input)
+{
+    StorageError error;
+    UserRecord user;
+    if (QThread::currentThread() != thread() || !accounts_) {
+        error.code    = StorageErrorCode::InvalidInput;
+        error.message = QStringLiteral("OAuth user resolution requires an open worker connection");
+    } else {
+        const auto result = accounts_->find_or_create_oauth_user(input, &error);
+        if (result.has_value()) {
+            user = *result;
+        }
+    }
+    emit oauth_user_resolved(request_id, user, error);
 }
 
 void DatabaseWorker::find_user(quint64 request_id, qint64 user_id)

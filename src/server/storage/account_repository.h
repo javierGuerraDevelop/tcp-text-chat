@@ -18,6 +18,9 @@ public:
     /// Inserts a local user and returns its persisted record.
     std::optional<UserRecord> create_local_user(const NewLocalUser& input, StorageError* error = nullptr);
 
+    /// Finds an exact provider identity or atomically creates its OAuth-only user and link.
+    std::optional<UserRecord> find_or_create_oauth_user(const NewOAuthUser& input, StorageError* error = nullptr);
+
     /// Finds a user by integer ID, or reports NotFound.
     std::optional<UserRecord> find_user_by_id(qint64 id, StorageError* error = nullptr);
 

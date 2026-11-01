@@ -1,6 +1,8 @@
 #pragma once
 
 #include "attempt_limiter.h"
+#include "oauth_callback_server.h"
+#include "oauth_coordinator.h"
 #include "password_hasher.h"
 #include "server/tls_server.h"
 #include "storage/database_worker.h"
@@ -33,6 +35,9 @@ struct AuthenticationServiceOptions {
     qint64 session_lifetime_ms          = 7 * 24 * 60 * 60 * 1000;
     qint64 authentication_timeout_ms    = 30000;
     std::function<qint64()> clock;
+    std::optional<OAuthCallbackServerOptions> oauth_callback;
+    OAuthCoordinatorOptions oauth;
+    QList<std::shared_ptr<OAuthProvider>> oauth_providers;
 };
 
 /// Coordinates TLS authentication, bounded password jobs, and thread-affine persistence.
@@ -61,7 +66,7 @@ public:
 signals:
     /// Reports startup completion with an empty message on success.
     void ready(bool success, const QString& message);
-    /// Emits after a connection has an authenticated local identity.
+    /// Emits after a connection has an authenticated identity.
     void authenticated(quint64 connection_id, const tcp_chat::protocol::UserIdentity& user);
     /// Emits after a connection's current session is logged out.
     void logged_out(quint64 connection_id);
@@ -72,6 +77,9 @@ private:
         LogIn,
         LogOut,
         Session,
+        OAuthStart,
+        OAuthStatus,
+        OAuthComplete,
     };
 
     /// Holds one in-flight request without retaining the plaintext session token.
@@ -96,6 +104,7 @@ private:
         QHostAddress address;
         qint64 connected_at = 0;
         AttemptLimiter limiter;
+        AttemptLimiter oauth_poll_limiter { 120, 60000 };
         int pending               = 0;
         bool authenticated        = false;
         qint64 user_id            = 0;
@@ -119,6 +128,11 @@ private:
     void active_session_found(quint64 request_id, const storage::SessionRecord& session, const storage::StorageError& error);
     /// Handles a session revocation result.
     void session_revoked(quint64 request_id, const storage::SessionRecord& session, const storage::StorageError& error);
+    /// Queues atomic provisioning for a provider-validated identity.
+    void oauth_account_requested(quint64 flow_id, const QString& provider, const QString& subject,
+        const QString& username, const QString& normalized_username, const QString& display_name);
+    /// Completes or retries account provisioning for a browser flow.
+    void oauth_user_resolved(quint64 request_id, const storage::UserRecord& user, const storage::StorageError& error);
     /// Registers a newly connected TLS peer.
     void client_connected(quint64 connection_id, const QHostAddress& address, quint16 port);
     /// Cancels work associated with a disconnected peer.
@@ -140,6 +154,8 @@ private:
         const std::optional<QString>& request_id, protocol::ErrorCode* error, QString* message);
     /// Completes an operation with a public result.
     void succeed(quint64 operation_id, const protocol::AuthenticationResult& result);
+    /// Completes an OAuth start/status operation with its public flow result.
+    void succeed_oauth(quint64 operation_id, const protocol::OAuthResult& result);
     /// Completes an operation with a safe public error.
     void fail(quint64 operation_id, protocol::ErrorCode code, const QString& message);
     /// Sends a public result to the requesting connection.
@@ -168,6 +184,8 @@ private:
     QThreadPool hash_pool_;
     QThread database_thread_;
     storage::DatabaseWorker* worker_ = nullptr;
+    std::unique_ptr<OAuthCallbackServer> oauth_callback_server_;
+    std::unique_ptr<OAuthCoordinator> oauth_coordinator_;
     QTimer deadline_timer_;
     QHash<quint64, Connection> connections_;
     QHash<quint64, std::shared_ptr<Operation>> operations_;

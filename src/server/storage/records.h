@@ -30,6 +30,16 @@ struct NewLocalUser {
     qint64 now = 0;
 };
 
+/// Contains the fields needed to atomically find or provision an OAuth-linked user.
+struct NewOAuthUser {
+    QString provider;
+    QString provider_subject;
+    QString username;
+    QString normalized_username;
+    QString display_name;
+    qint64 now = 0;
+};
+
 /// Contains a persisted server session with a hashed opaque token.
 struct SessionRecord {
     qint64 id      = 0;
@@ -81,6 +91,7 @@ struct MessageAppendResult {
 
 Q_DECLARE_METATYPE(tcp_chat::storage::UserRecord)
 Q_DECLARE_METATYPE(tcp_chat::storage::NewLocalUser)
+Q_DECLARE_METATYPE(tcp_chat::storage::NewOAuthUser)
 Q_DECLARE_METATYPE(tcp_chat::storage::SessionRecord)
 Q_DECLARE_METATYPE(tcp_chat::storage::NewSession)
 Q_DECLARE_METATYPE(tcp_chat::storage::MessageRecord)

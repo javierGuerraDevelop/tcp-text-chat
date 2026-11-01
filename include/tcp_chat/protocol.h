@@ -21,6 +21,10 @@ enum class MessageType {
     AuthLogOut,
     AuthSession,
     AuthResult,
+    AuthOAuthStart,
+    AuthOAuthStatus,
+    AuthOAuthComplete,
+    AuthOAuthResult,
 };
 
 /// Identifies stable error codes shared by protocol handlers and codecs.
