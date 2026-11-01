@@ -10,6 +10,12 @@
 
 namespace tcp_chat::auth {
 
+/// Distinguishes signed identity tokens from direct authenticated UserInfo responses.
+enum class OAuthIdentitySource {
+    SignedToken,
+    UserInfo,
+};
+
 /// Configures one canonical provider without containing a client secret.
 struct OAuthProviderConfiguration {
     QString id;
@@ -17,7 +23,9 @@ struct OAuthProviderConfiguration {
     QString client_id;
     QString issuer;
     QString audience;
-    bool use_nonce = false;
+    QString authorization_scope;
+    OAuthIdentitySource identity_source = OAuthIdentitySource::SignedToken;
+    bool use_nonce                      = false;
 };
 
 /// Contains the public parameters needed to construct an authorization URL.
@@ -65,7 +73,7 @@ public:
     /// Returns the provider's canonical configuration.
     const OAuthProviderConfiguration& configuration() const;
     /// Returns a configuration error, or nullopt when authorization can be configured safely.
-    std::optional<QString> configuration_error() const;
+    virtual std::optional<QString> configuration_error() const;
     /// Builds an authorization URL with state, S256 PKCE, exact redirect, and optional nonce.
     std::optional<QUrl> authorization_url(const OAuthAuthorizationRequest& request) const;
     /// Starts an exchange after validating its bounded inputs and exact HTTPS redirect.
@@ -76,7 +84,7 @@ signals:
     void exchange_finished(const tcp_chat::auth::OAuthExchangeResult& result);
 
 protected:
-    /// Exchanges a code and validates its token signature and PKCE verifier before publishing identity claims.
+    /// Exchanges a code and validates its PKCE verifier and identity source before publishing identity claims.
     virtual void perform_exchange(quint64 flow_id, OAuthExchange exchange) = 0;
     /// Queues a result so callers never re-enter flow handling during an exchange call.
     void finish_exchange(OAuthExchangeResult result);

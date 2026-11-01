@@ -41,6 +41,7 @@ OAuthProvider::OAuthProvider(OAuthProviderConfiguration configuration, QObject* 
     : QObject(parent)
     , configuration_(std::move(configuration))
 {
+    qRegisterMetaType<tcp_chat::auth::OAuthExchangeResult>("tcp_chat::auth::OAuthExchangeResult");
 }
 
 const OAuthProviderConfiguration& OAuthProvider::configuration() const
@@ -50,10 +51,27 @@ const OAuthProviderConfiguration& OAuthProvider::configuration() const
 
 std::optional<QString> OAuthProvider::configuration_error() const
 {
+    if (configuration_.identity_source != OAuthIdentitySource::SignedToken
+        && configuration_.identity_source != OAuthIdentitySource::UserInfo) {
+        return QStringLiteral("OAuth identity source is invalid");
+    }
+    const bool signed_token = configuration_.identity_source == OAuthIdentitySource::SignedToken;
+    const QString audience  = configuration_.audience.isEmpty() ? configuration_.client_id : configuration_.audience;
     if (!valid_provider_id(configuration_.id) || !valid_https_url(configuration_.authorization_endpoint)
         || !valid_configuration_text(configuration_.client_id, 256)
-        || !valid_configuration_text(configuration_.audience.isEmpty() ? configuration_.client_id : configuration_.audience, 256)) {
+        || (signed_token && !valid_configuration_text(audience, 256))) {
         return QStringLiteral("OAuth provider identity, endpoint, or audience is invalid");
+    }
+    if (!configuration_.authorization_scope.isEmpty()
+        && (configuration_.authorization_scope.size() > 512
+            || std::any_of(configuration_.authorization_scope.cbegin(), configuration_.authorization_scope.cend(),
+                [](QChar character) { return !character.isPrint() || character.unicode() > 0x7f; }))) {
+        return QStringLiteral("OAuth authorization scope is invalid");
+    }
+    if (!signed_token
+        && (configuration_.use_nonce || !configuration_.issuer.isEmpty() || !configuration_.audience.isEmpty()
+            || configuration_.authorization_scope.isEmpty())) {
+        return QStringLiteral("UserInfo providers require a scope and cannot use signed-token claims or nonce");
     }
     if (configuration_.use_nonce && !valid_https_url(QUrl(configuration_.issuer))) {
         return QStringLiteral("An OpenID provider requires an HTTPS issuer");
@@ -82,11 +100,12 @@ std::optional<QUrl> OAuthProvider::authorization_url(const OAuthAuthorizationReq
     query.addQueryItem(QStringLiteral("state"), QString::fromLatin1(request.state));
     query.addQueryItem(QStringLiteral("code_challenge"), QString::fromLatin1(request.code_challenge));
     query.addQueryItem(QStringLiteral("code_challenge_method"), QStringLiteral("S256"));
+    const QString scope = configuration_.authorization_scope.isEmpty()
+        ? (configuration_.use_nonce ? QStringLiteral("openid profile") : QStringLiteral("read:user"))
+        : configuration_.authorization_scope;
+    query.addQueryItem(QStringLiteral("scope"), scope);
     if (configuration_.use_nonce) {
-        query.addQueryItem(QStringLiteral("scope"), QStringLiteral("openid profile"));
         query.addQueryItem(QStringLiteral("nonce"), QString::fromLatin1(request.nonce));
-    } else {
-        query.addQueryItem(QStringLiteral("scope"), QStringLiteral("read:user"));
     }
     url.setQuery(query);
     return url;
