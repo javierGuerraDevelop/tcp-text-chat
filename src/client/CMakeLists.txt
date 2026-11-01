@@ -19,6 +19,8 @@ target_link_libraries(tcp_chat_client_transport
 tcp_chat_configure_target(tcp_chat_client_transport)
 
 add_library(tcp_chat_client_ui STATIC
+    main_window.cpp
+    main_window.h
     theme_manager.cpp
     theme_manager.h
 )
