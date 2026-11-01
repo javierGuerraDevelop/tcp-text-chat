@@ -37,6 +37,9 @@ public slots:
     /// Finds a local user and emits local_user_found with the same request ID.
     void find_local_user(quint64 request_id, const QString& normalized_username);
 
+    /// Finds or provisions an OAuth user and emits oauth_user_resolved with the same request ID.
+    void find_or_create_oauth_user(quint64 request_id, const NewOAuthUser& input);
+
     /// Finds a user by ID and emits user_found with the same request ID.
     void find_user(quint64 request_id, qint64 user_id);
 
@@ -60,6 +63,9 @@ signals:
         const tcp_chat::storage::StorageError& error);
     /// Returns a user lookup or a typed storage failure.
     void local_user_found(quint64 request_id, const tcp_chat::storage::UserRecord& user,
+        const tcp_chat::storage::StorageError& error);
+    /// Returns an OAuth-linked user or a typed storage failure.
+    void oauth_user_resolved(quint64 request_id, const tcp_chat::storage::UserRecord& user,
         const tcp_chat::storage::StorageError& error);
     /// Returns a user ID lookup or a typed storage failure.
     void user_found(quint64 request_id, const tcp_chat::storage::UserRecord& user,
