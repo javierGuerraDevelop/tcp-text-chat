@@ -1,0 +1,150 @@
+QWidget {
+    background-color: %WINDOW%;
+    color: %TEXT%;
+    font-family: "Inter", "Noto Sans", sans-serif;
+    font-size: 10pt;
+}
+
+QMainWindow,
+QDialog {
+    background-color: %WINDOW%;
+}
+
+QFrame#navigation {
+    background-color: %SURFACE%;
+    border-right: 1px solid %BORDER%;
+}
+
+QFrame#content {
+    background-color: %WINDOW%;
+}
+
+QFrame[role="card"] {
+    background-color: %SURFACE%;
+    border: 1px solid %BORDER%;
+    border-radius: 12px;
+}
+
+QLabel {
+    background: transparent;
+}
+
+QLabel[role="title"] {
+    font-size: 20pt;
+    font-weight: 600;
+}
+
+QLabel[role="heading"] {
+    font-size: 14pt;
+    font-weight: 600;
+}
+
+QLabel[role="brand"] {
+    color: %ACCENT%;
+    font-size: 16pt;
+    font-weight: 700;
+}
+
+QLabel[role="secondary"] {
+    color: %MUTED_TEXT%;
+}
+
+QLabel[role="error"] {
+    color: %ERROR%;
+}
+
+QLineEdit {
+    background-color: %SURFACE%;
+    border: 1px solid %BORDER%;
+    border-radius: 6px;
+    padding: 9px 12px;
+    selection-background-color: %ACCENT%;
+    selection-color: %ON_ACCENT%;
+}
+
+QLineEdit:focus {
+    border: 1px solid %ACCENT%;
+}
+
+QPushButton {
+    background-color: %SECONDARY_SURFACE%;
+    border: 1px solid %BORDER%;
+    border-radius: 6px;
+    padding: 9px 16px;
+}
+
+QPushButton:hover {
+    background-color: %HOVER%;
+    border-color: %MUTED_TEXT%;
+}
+
+QPushButton:pressed {
+    background-color: %BORDER%;
+}
+
+QPushButton:focus {
+    border: 2px solid %ACCENT%;
+    padding: 8px 15px;
+}
+
+QPushButton[role="primary"] {
+    background-color: %ACCENT%;
+    border-color: %ACCENT%;
+    color: %ON_ACCENT%;
+    font-weight: 600;
+}
+
+QPushButton[role="primary"]:hover {
+    background-color: %ACCENT_HOVER%;
+    border-color: %ACCENT_HOVER%;
+}
+
+QPushButton:disabled {
+    background-color: %SECONDARY_SURFACE%;
+    border-color: %BORDER%;
+    color: %MUTED_TEXT%;
+}
+
+QComboBox {
+    background-color: %SURFACE%;
+    border: 1px solid %BORDER%;
+    border-radius: 6px;
+    padding: 7px 10px;
+}
+
+QComboBox:hover,
+QComboBox:focus {
+    border-color: %ACCENT%;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 24px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: %SURFACE%;
+    border: 1px solid %BORDER%;
+    selection-background-color: %SECONDARY_SURFACE%;
+    selection-color: %TEXT%;
+}
+
+QProgressBar {
+    background-color: %SECONDARY_SURFACE%;
+    border: none;
+    border-radius: 3px;
+    max-height: 6px;
+    text-align: center;
+}
+
+QProgressBar::chunk {
+    background-color: %ACCENT%;
+    border-radius: 3px;
+}
+
+QToolTip {
+    background-color: %SURFACE%;
+    border: 1px solid %BORDER%;
+    color: %TEXT%;
+    padding: 5px;
+}

@@ -18,14 +18,38 @@ target_link_libraries(tcp_chat_client_transport
 
 tcp_chat_configure_target(tcp_chat_client_transport)
 
+add_library(tcp_chat_client_ui STATIC
+    theme_manager.cpp
+    theme_manager.h
+)
+add_library(tcp_chat::client_ui ALIAS tcp_chat_client_ui)
+
+target_include_directories(tcp_chat_client_ui
+    PUBLIC
+        "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>"
+)
+target_link_libraries(tcp_chat_client_ui
+    PUBLIC
+        Qt6::Widgets
+)
+set_source_files_properties("${PROJECT_SOURCE_DIR}/resources/theme.qss"
+    PROPERTIES QT_RESOURCE_ALIAS "theme.qss"
+)
+qt_add_resources(tcp_chat_client_ui "client_resources"
+    PREFIX "/tcp_chat"
+    FILES "${PROJECT_SOURCE_DIR}/resources/theme.qss"
+)
+
+tcp_chat_configure_target(tcp_chat_client_ui)
+
 add_executable(tcp_chat_client
     main.cpp
 )
 
 target_link_libraries(tcp_chat_client
     PRIVATE
-        tcp_chat::client
-        Qt6::Widgets
+        tcp_chat::client_ui
+        tcp_chat::common
 )
 
 tcp_chat_configure_target(tcp_chat_client)
