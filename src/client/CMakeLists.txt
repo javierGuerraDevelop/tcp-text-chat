@@ -23,6 +23,10 @@ target_link_libraries(tcp_chat_client_transport
 tcp_chat_configure_target(tcp_chat_client_transport)
 
 add_library(tcp_chat_client_ui STATIC
+    authentication_page.cpp
+    authentication_page.h
+    client_application.cpp
+    client_application.h
     main_window.cpp
     main_window.h
     theme_manager.cpp
@@ -36,6 +40,7 @@ target_include_directories(tcp_chat_client_ui
 )
 target_link_libraries(tcp_chat_client_ui
     PUBLIC
+        tcp_chat::client
         Qt6::Widgets
 )
 set_source_files_properties("${PROJECT_SOURCE_DIR}/resources/theme.qss"
