@@ -18,6 +18,18 @@ target_link_libraries(tcp_chat_server_transport
 
 tcp_chat_configure_target(tcp_chat_server_transport)
 
+add_library(tcp_chat_server_configuration STATIC
+    server_configuration.cpp
+    server_configuration.h
+)
+add_library(tcp_chat::server_configuration ALIAS tcp_chat_server_configuration)
+target_link_libraries(tcp_chat_server_configuration
+    PUBLIC
+        tcp_chat::auth
+        Qt6::Core
+)
+tcp_chat_configure_target(tcp_chat_server_configuration)
+
 add_executable(tcp_chat_server
     main.cpp
 )
@@ -25,6 +37,7 @@ add_executable(tcp_chat_server
 target_link_libraries(tcp_chat_server
     PRIVATE
         tcp_chat::server
+        tcp_chat::server_configuration
         tcp_chat::storage
         tcp_chat::auth
         Qt6::Core

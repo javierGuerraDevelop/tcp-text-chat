@@ -2,9 +2,10 @@
 
 A C++20 desktop text chat project with a Qt 6 client, a headless server, TLS
 transport, and SQLite persistence. The first release provides one shared room,
-username/password accounts, and Google/GitHub sign-in. The current targets establish
-the common, client, server, and test build boundaries. The versioned TCP wire
-contract is documented in `docs/protocol.md`.
+username/password accounts, and Google/GitHub sign-in. The desktop client supports
+local and browser authentication over TLS, and the headless server persists accounts
+and sessions in SQLite. The versioned TCP wire contract is documented in
+`docs/protocol.md`.
 
 ## Requirements
 
@@ -73,11 +74,56 @@ clang-format --dry-run --Werror <changed-files>
 Tests are deterministic and run without internet access, OAuth credentials, or a
 display server.
 
-## Desktop appearance
+## Run the applications
 
-Run `build/bin/tcp_chat_client` to open the Qt Widgets application shell. It provides
-welcome, connecting, chat-empty, and recoverable error states with keyboard-accessible
-controls. Authentication controls are not yet connected to the server.
+Start the server with a certificate chain and RSA private key:
+
+```bash
+build/bin/tcp_chat_server \
+  --certificate /path/to/server-chain.pem \
+  --private-key /path/to/server-key.pem \
+  --database /path/to/chat.sqlite \
+  --migrations migrations
+```
+
+The listener defaults to `127.0.0.1:10443`. Use `--listen` and `--port` to change it.
+The database defaults to `chat.sqlite` in Qt's application-data directory; migrations
+default to `./migrations`. Startup fails with an actionable error when required files,
+paths, ports, or provider settings are invalid.
+
+Start the desktop client with a publicly trusted server:
+
+```bash
+build/bin/tcp_chat_client --host chat.example.com --port 10443
+```
+
+The client uses the system trust store and verifies both the certificate and hostname.
+For an explicitly configured private development CA, add `--ca /path/to/ca.pem`.
+`--peer-name` overrides only the expected DNS name, never certificate verification.
+The corresponding environment settings are `TCP_CHAT_SERVER_HOST`,
+`TCP_CHAT_SERVER_PORT`, `TCP_CHAT_TLS_CA_FILE`, and `TCP_CHAT_TLS_PEER_NAME`.
+Server CLI options also have environment equivalents: `TCP_CHAT_LISTEN_ADDRESS`,
+`TCP_CHAT_PORT`, `TCP_CHAT_TLS_CERTIFICATE_FILE`, `TCP_CHAT_TLS_PRIVATE_KEY_FILE`,
+`TCP_CHAT_DATABASE_PATH`, and `TCP_CHAT_MIGRATIONS_PATH`.
+
+For a loopback-only demonstration, the non-production fixtures can be used explicitly:
+
+```bash
+build/bin/tcp_chat_server \
+  --certificate tests/tls_fixtures/trusted_server.crt \
+  --private-key tests/tls_fixtures/trusted_server.key \
+  --database build/development.sqlite \
+  --migrations migrations
+
+# In another terminal:
+build/bin/tcp_chat_client --host localhost --port 10443 \
+  --ca tests/tls_fixtures/trusted_ca.crt
+```
+
+These fixture keys are public test data and must never protect a real deployment.
+The client presents local login/signup and Google/GitHub browser actions with progress,
+validation, cancellation, and safe errors. Sessions stay in memory, so restarting the
+client requires signing in again. Message exchange is not yet connected to the chat page.
 
 The **Appearance** selector offers Auto, Light, and Dark. Auto follows Qt's system
 color-scheme notifications without a restart, falling back to Light when the platform
@@ -104,6 +150,14 @@ Configure Google and GitHub independently with these server environment pairs:
 
 - `TCP_CHAT_GOOGLE_CLIENT_ID` and `TCP_CHAT_GOOGLE_CLIENT_SECRET`
 - `TCP_CHAT_GITHUB_CLIENT_ID` and `TCP_CHAT_GITHUB_CLIENT_SECRET`
+
+When either pair is configured, also set `TCP_CHAT_OAUTH_CALLBACK_URL` to the exact
+registered HTTPS callback, and provide `TCP_CHAT_OAUTH_TLS_CERTIFICATE_FILE` and
+`TCP_CHAT_OAUTH_TLS_PRIVATE_KEY_FILE`. The callback listener defaults to `127.0.0.1`
+and the callback URL's port. `TCP_CHAT_OAUTH_LISTEN_ADDRESS` and
+`TCP_CHAT_OAUTH_LISTEN_PORT` can override those values, but the listener port must
+match the callback URL port. Equivalent `--oauth-*` CLI options are available through
+`build/bin/tcp_chat_server --help`.
 
 Both values in a pair must be nonempty. Unset pairs remain unconfigured; incomplete
 or invalid pairs fail configuration with an actionable error. Provider endpoints
