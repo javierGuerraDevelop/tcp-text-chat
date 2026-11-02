@@ -1,6 +1,8 @@
 add_library(tcp_chat_client_transport STATIC
     authentication_controller.cpp
     authentication_controller.h
+    client_configuration.cpp
+    client_configuration.h
     local_authentication_client.cpp
     local_authentication_client.h
     oauth_client.cpp

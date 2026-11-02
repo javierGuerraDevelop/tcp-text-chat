@@ -92,6 +92,16 @@ tcp_chat_add_auth_test(tcp_chat_authentication_tests test_authentication_service
 target_link_libraries(tcp_chat_authentication_tests PRIVATE tcp_chat::client)
 tcp_chat_add_auth_test(tcp_chat_authentication_controller_tests test_authentication_controller.cpp authentication_controller)
 target_link_libraries(tcp_chat_authentication_controller_tests PRIVATE tcp_chat::client)
+add_executable(tcp_chat_runtime_configuration_tests test_runtime_configuration.cpp)
+target_link_libraries(tcp_chat_runtime_configuration_tests
+    PRIVATE
+        tcp_chat::client
+        tcp_chat::server_configuration
+        Qt6::Test
+)
+target_compile_definitions(tcp_chat_runtime_configuration_tests PRIVATE TCP_CHAT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+tcp_chat_configure_target(tcp_chat_runtime_configuration_tests)
+add_test(NAME runtime_configuration COMMAND tcp_chat_runtime_configuration_tests)
 tcp_chat_add_storage_test(tcp_chat_oauth_account_tests test_oauth_account_repository.cpp oauth_accounts)
 tcp_chat_add_storage_test(tcp_chat_oauth_worker_tests test_oauth_database_worker.cpp oauth_database_worker)
 tcp_chat_add_auth_test(tcp_chat_oauth_protocol_tests test_oauth_protocol.cpp oauth_protocol)
