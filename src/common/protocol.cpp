@@ -58,6 +58,14 @@ std::optional<QLatin1StringView> message_type_name(MessageType type) noexcept
         return QLatin1StringView { "auth.oauth.complete" };
     case MessageType::AuthOAuthResult:
         return QLatin1StringView { "auth.oauth.result" };
+    case MessageType::ChatHistory:
+        return QLatin1StringView { "chat.history" };
+    case MessageType::ChatHistoryResult:
+        return QLatin1StringView { "chat.history.result" };
+    case MessageType::ChatSend:
+        return QLatin1StringView { "chat.send" };
+    case MessageType::ChatMessage:
+        return QLatin1StringView { "chat.message" };
     }
 
     return std::nullopt;
@@ -100,6 +108,18 @@ std::optional<MessageType> message_type_from_name(QStringView name) noexcept
     }
     if (name == QLatin1StringView { "auth.oauth.result" }) {
         return MessageType::AuthOAuthResult;
+    }
+    if (name == QLatin1StringView { "chat.history" }) {
+        return MessageType::ChatHistory;
+    }
+    if (name == QLatin1StringView { "chat.history.result" }) {
+        return MessageType::ChatHistoryResult;
+    }
+    if (name == QLatin1StringView { "chat.send" }) {
+        return MessageType::ChatSend;
+    }
+    if (name == QLatin1StringView { "chat.message" }) {
+        return MessageType::ChatMessage;
     }
 
     return std::nullopt;

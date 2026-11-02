@@ -87,6 +87,10 @@ void ProtocolTest::messageTypeNames_data()
     QTest::newRow("logout") << MessageType::AuthLogOut << QStringLiteral("auth.logout");
     QTest::newRow("session") << MessageType::AuthSession << QStringLiteral("auth.session");
     QTest::newRow("authentication result") << MessageType::AuthResult << QStringLiteral("auth.result");
+    QTest::newRow("history") << MessageType::ChatHistory << QStringLiteral("chat.history");
+    QTest::newRow("history result") << MessageType::ChatHistoryResult << QStringLiteral("chat.history.result");
+    QTest::newRow("send") << MessageType::ChatSend << QStringLiteral("chat.send");
+    QTest::newRow("message") << MessageType::ChatMessage << QStringLiteral("chat.message");
 }
 
 void ProtocolTest::messageTypeNames()
@@ -275,7 +279,7 @@ void ProtocolTest::rejectsUnsupportedOutgoingVersion()
 void ProtocolTest::rejectsUnknownMessageType()
 {
     QJsonObject object = valid_object();
-    object.insert(QStringLiteral("type"), QStringLiteral("chat.send"));
+    object.insert(QStringLiteral("type"), QStringLiteral("chat.unknown"));
 
     tcp_chat::protocol::ProtocolError error;
     const auto decoded = tcp_chat::protocol::envelope_from_json(object, &error);

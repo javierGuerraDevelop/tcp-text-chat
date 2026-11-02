@@ -25,6 +25,10 @@ enum class MessageType {
     AuthOAuthStatus,
     AuthOAuthComplete,
     AuthOAuthResult,
+    ChatHistory,
+    ChatHistoryResult,
+    ChatSend,
+    ChatMessage,
 };
 
 /// Identifies stable error codes shared by protocol handlers and codecs.
