@@ -1,5 +1,7 @@
 #include "main_window.h"
 
+#include "authentication_page.h"
+
 #include <QComboBox>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -62,10 +64,12 @@ MainWindow::MainWindow(ThemeManager& theme_manager, QWidget* parent)
     , theme_selector_(create_theme_selector(nullptr))
     , pages_(new QStackedWidget)
     , error_message_(new QLabel)
+    , authentication_page_(new AuthenticationPage)
+    , chat_identity_(new QLabel)
 {
     setWindowTitle(QStringLiteral("TCP Chat"));
-    setMinimumSize(720, 480);
-    resize(960, 640);
+    setMinimumSize(800, 680);
+    resize(1000, 760);
 
     auto* central_widget = new QWidget(this);
     auto* window_layout  = new QVBoxLayout(central_widget);
@@ -102,9 +106,8 @@ MainWindow::MainWindow(ThemeManager& theme_manager, QWidget* parent)
 
     auto* welcome_layout = create_page(pages_, QStringLiteral("Good conversations start here."),
         QStringLiteral("Sign in or create an account to join one shared room with your people."));
-    auto* welcome_note   = new QLabel(QStringLiteral("A simple, secure place to talk."), welcome_layout->parentWidget());
-    welcome_note->setProperty("role", QStringLiteral("secondary"));
-    welcome_layout->addWidget(welcome_note);
+    authentication_page_->setParent(welcome_layout->parentWidget());
+    welcome_layout->addWidget(authentication_page_);
 
     auto* connecting_layout = create_page(pages_, QStringLiteral("Connecting securely"),
         QStringLiteral("Establishing an encrypted connection to the chat server."));
@@ -131,6 +134,12 @@ MainWindow::MainWindow(ThemeManager& theme_manager, QWidget* parent)
     empty_description->setProperty("role", QStringLiteral("secondary"));
     empty_description->setAlignment(Qt::AlignCenter);
     chat_layout->addWidget(empty_description);
+    chat_identity_->setParent(chat_layout->parentWidget());
+    chat_identity_->setObjectName(QStringLiteral("chatIdentity"));
+    chat_identity_->setProperty("role", QStringLiteral("secondary"));
+    chat_identity_->setTextFormat(Qt::PlainText);
+    chat_identity_->setAlignment(Qt::AlignCenter);
+    chat_layout->addWidget(chat_identity_);
 
     auto* error_layout = create_page(pages_, QStringLiteral("Unable to continue"), QString());
     error_message_->setParent(error_layout->parentWidget());
@@ -139,10 +148,10 @@ MainWindow::MainWindow(ThemeManager& theme_manager, QWidget* parent)
     error_message_->setTextFormat(Qt::PlainText);
     error_message_->setWordWrap(true);
     error_layout->addWidget(error_message_);
-    auto* back_button = new QPushButton(QStringLiteral("Back to welcome"), error_layout->parentWidget());
-    back_button->setObjectName(QStringLiteral("dismissError"));
-    back_button->setDefault(true);
-    create_action_row(error_layout)->addWidget(back_button);
+    auto* retry_button = new QPushButton(QStringLiteral("Try again"), error_layout->parentWidget());
+    retry_button->setObjectName(QStringLiteral("dismissError"));
+    retry_button->setDefault(true);
+    create_action_row(error_layout)->addWidget(retry_button);
 
     connect(theme_selector_, &QComboBox::currentIndexChanged, this, [this](int index) {
         const auto preference = static_cast<ThemeManager::Preference>(theme_selector_->itemData(index).toInt());
@@ -152,9 +161,14 @@ MainWindow::MainWindow(ThemeManager& theme_manager, QWidget* parent)
         show_page(Page::Welcome);
         emit cancel_requested();
     });
-    connect(back_button, &QPushButton::clicked, this, [this]() {
-        show_page(Page::Welcome);
+    connect(retry_button, &QPushButton::clicked, this, [this]() {
+        show_page(Page::Connecting);
+        emit retry_requested();
     });
+    connect(authentication_page_, &AuthenticationPage::log_in_requested, this, &MainWindow::log_in_requested);
+    connect(authentication_page_, &AuthenticationPage::sign_up_requested, this, &MainWindow::sign_up_requested);
+    connect(authentication_page_, &AuthenticationPage::oauth_requested, this, &MainWindow::oauth_requested);
+    connect(authentication_page_, &AuthenticationPage::cancel_requested, this, &MainWindow::cancel_requested);
 
     show_page(Page::Welcome);
 }
@@ -167,9 +181,33 @@ void MainWindow::show_page(Page page)
 void MainWindow::show_error(const QString& message)
 {
     error_message_->setText(message.trimmed().isEmpty()
-            ? QStringLiteral("Something went wrong. Return to the welcome page and try again.")
+            ? QStringLiteral("Something went wrong. Check the server configuration and try again.")
             : message.trimmed());
     show_page(Page::Error);
+}
+
+void MainWindow::set_authentication_busy(bool busy, const QString& status)
+{
+    authentication_page_->set_busy(busy, status);
+}
+
+void MainWindow::show_authentication_error(const QString& message)
+{
+    show_page(Page::Welcome);
+    authentication_page_->show_error(message);
+}
+
+void MainWindow::reset_authentication(const QString& status)
+{
+    authentication_page_->reset();
+    authentication_page_->set_busy(false, status);
+    show_page(Page::Welcome);
+}
+
+void MainWindow::show_authenticated(const protocol::UserIdentity& user)
+{
+    chat_identity_->setText(QStringLiteral("Signed in as %1 (@%2)").arg(user.display_name, user.username));
+    show_page(Page::Chat);
 }
 
 MainWindow::Page MainWindow::current_page() const

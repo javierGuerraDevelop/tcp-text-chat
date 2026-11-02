@@ -8,6 +8,7 @@
 #include <QSettings>
 #include <QSignalSpy>
 #include <QStackedWidget>
+#include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -102,9 +103,11 @@ private slots:
 
         auto* dismiss = window.findChild<QPushButton*>(QStringLiteral("dismissError"));
         QVERIFY(dismiss);
+        QSignalSpy retry(&window, &MainWindow::retry_requested);
         dismiss->setFocus(Qt::OtherFocusReason);
         QTest::keyClick(dismiss, Qt::Key_Return);
-        QCOMPARE(window.current_page(), MainWindow::Page::Welcome);
+        QCOMPARE(window.current_page(), MainWindow::Page::Connecting);
+        QCOMPARE(retry.count(), 1);
 
         window.show_error(QString());
         QVERIFY(!message->text().isEmpty());
@@ -136,6 +139,17 @@ private slots:
         if (!capture_directory.isEmpty()) {
             QVERIFY(light.save(capture_directory + QStringLiteral("/welcome-light.png")));
             QVERIFY(dark.save(capture_directory + QStringLiteral("/welcome-dark.png")));
+        }
+
+        auto* modes = window.findChild<QTabWidget*>(QStringLiteral("authenticationModes"));
+        QVERIFY(modes);
+        modes->setCurrentIndex(1);
+        QCoreApplication::processEvents();
+        const QImage signup = window.grab().toImage();
+        QCOMPARE(signup.size(), window.size());
+        QVERIFY(window.findChild<QWidget*>(QStringLiteral("signupConfirmation"))->isVisible());
+        if (!capture_directory.isEmpty()) {
+            QVERIFY(signup.save(capture_directory + QStringLiteral("/signup-dark.png")));
         }
 
         auto* pages = window.findChild<QStackedWidget*>();
