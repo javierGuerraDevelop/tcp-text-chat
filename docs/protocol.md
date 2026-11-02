@@ -104,6 +104,10 @@ and event types must be added to the shared registry before handlers use them.
 | `auth.oauth.status` | Client to server | Opaque browser-flow handle |
 | `auth.oauth.complete` | Client to server | Flow handle and distinct single-use handoff |
 | `auth.oauth.result` | Server to client | Browser-flow state and authorized fields |
+| `chat.history` | Client to server | Optional history cursor and page limit |
+| `chat.history.result` | Server to client | Ascending message page and continuation state |
+| `chat.send` | Client to server | Client message ID and unmodified body |
+| `chat.message` | Server to client | Persisted message acknowledgement or live event |
 
 Handlers must validate message-specific payload requirements before dispatch.
 
@@ -139,6 +143,52 @@ Authentication attempts are bounded per connection and per source IP in fixed
 60-second windows. Excess attempts return `rate_limited`. Unauthenticated
 connections also have a 30-second deadline by default. Password hashing runs in a
 bounded worker pool, and each connection has a bounded number of pending operations.
+
+## Shared-room chat
+
+All chat operations require an authenticated connection. Version 1 provides one shared
+persisted room; it has no room identifier, direct-message target, attachment, editing,
+or deletion fields.
+
+`chat.send` accepts exactly `clientMessageId` and `body`. The client message ID is an
+opaque string of 1 to 128 printable, non-whitespace ASCII characters. It is unique per
+sender and makes retries idempotent. Bodies contain 1 to 4,000 UTF-16 code units after
+rejecting blank input. Leading, trailing, and internal whitespace is preserved; the
+server assigns the timestamp and sender identity rather than accepting them from the
+client. Reusing a client message ID with a different body returns `invalid_request`.
+
+A successful send returns `chat.message` with the request's `requestId`. A newly inserted
+message is also broadcast in server-ID order to every authenticated connection as
+`chat.message` without a request ID. An exact retry returns the originally persisted
+message only to its requester and does not create another broadcast. Each message object
+contains:
+
+```json
+{
+  "id": "42",
+  "sender": {"id":"7","username":"Alice","displayName":"Alice Example"},
+  "clientMessageId": "client-42",
+  "body": "Hello, room",
+  "createdAt": 123456789
+}
+```
+
+Message and sender IDs are canonical decimal strings so JSON clients do not lose 64-bit
+integer precision. `createdAt` is the server's UTC timestamp in milliseconds since the
+Unix epoch. Receivers validate all sender and message fields, including the body and
+client message ID limits.
+
+`chat.history` accepts an optional `limit`, defaulting to 50 and ranging from 1 to 100.
+With no cursor it returns the latest page. `beforeId` selects an older page and must be
+a positive message ID. `afterId` selects reconnect catch-up and may be zero to start at
+the first message. The cursors are mutually exclusive.
+
+`chat.history.result` echoes the request ID and contains `messages` and `hasMore`.
+Messages are always in strictly increasing ID order. A server may return fewer messages
+than `limit` to keep the complete frame within 65,536 bytes. For a latest or `beforeId`
+request, `hasMore` reports whether older messages exist. For `afterId`, it reports whether
+another newer page exists; clients repeat catch-up from the last received ID until it is
+false.
 
 ## Browser OAuth
 

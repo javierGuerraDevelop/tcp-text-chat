@@ -2,6 +2,7 @@
 
 #include "records.h"
 #include "storage_error.h"
+#include "tcp_chat/chat_protocol.h"
 
 #include <QList>
 #include <QSqlDatabase>
@@ -10,8 +11,8 @@
 
 namespace tcp_chat::storage {
 
-inline constexpr qsizetype maximum_message_body_size      = 4000;
-inline constexpr qsizetype maximum_client_message_id_size = 128;
+inline constexpr qsizetype maximum_message_body_size      = protocol::maximum_chat_body_length;
+inline constexpr qsizetype maximum_client_message_id_size = protocol::maximum_client_message_id_length;
 
 /// Persists shared-room messages and idempotent send retries on one connection.
 class MessageRepository {
