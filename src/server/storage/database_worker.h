@@ -3,6 +3,7 @@
 #include "records.h"
 #include "storage_error.h"
 
+#include <QList>
 #include <QObject>
 #include <QSqlDatabase>
 
@@ -52,6 +53,13 @@ public slots:
     /// Revokes a session and emits session_revoked with the same request ID.
     void revoke_session(quint64 request_id, qint64 session_id, qint64 now);
 
+    /// Appends an idempotent message and emits message_appended with the same request ID.
+    void append_message(quint64 request_id, const NewMessage& input);
+    /// Loads the latest or an older page, using zero before_id for the latest page.
+    void history_before(quint64 request_id, qint64 before_id, int limit);
+    /// Loads a reconnect page after a message ID and reports whether newer rows remain.
+    void history_after(quint64 request_id, qint64 after_id, int limit);
+
     /// Closes the connection and repositories, then emits closed.
     void close();
 
@@ -79,6 +87,12 @@ signals:
     /// Returns a revoked session or a typed storage failure.
     void session_revoked(quint64 request_id, const tcp_chat::storage::SessionRecord& session,
         const tcp_chat::storage::StorageError& error);
+    /// Returns a new or idempotently matched message.
+    void message_appended(quint64 request_id, const tcp_chat::storage::MessageAppendResult& result,
+        const tcp_chat::storage::StorageError& error);
+    /// Returns an ascending history page and whether rows remain in its direction.
+    void message_history_loaded(quint64 request_id, const QList<tcp_chat::storage::MessageRecord>& messages,
+        bool has_more, const tcp_chat::storage::StorageError& error);
     /// Reports that the connection has been closed.
     void closed();
 

@@ -19,6 +19,10 @@ DatabaseWorker::DatabaseWorker(QObject* parent)
     qRegisterMetaType<tcp_chat::storage::NewOAuthUser>("tcp_chat::storage::NewOAuthUser");
     qRegisterMetaType<tcp_chat::storage::SessionRecord>("tcp_chat::storage::SessionRecord");
     qRegisterMetaType<tcp_chat::storage::NewSession>("tcp_chat::storage::NewSession");
+    qRegisterMetaType<tcp_chat::storage::MessageRecord>("tcp_chat::storage::MessageRecord");
+    qRegisterMetaType<tcp_chat::storage::NewMessage>("tcp_chat::storage::NewMessage");
+    qRegisterMetaType<tcp_chat::storage::MessageAppendResult>("tcp_chat::storage::MessageAppendResult");
+    qRegisterMetaType<QList<tcp_chat::storage::MessageRecord>>("QList<tcp_chat::storage::MessageRecord>");
 }
 
 DatabaseWorker::~DatabaseWorker()
@@ -183,6 +187,70 @@ void DatabaseWorker::revoke_session(quint64 request_id, qint64 session_id, qint6
         }
     }
     emit session_revoked(request_id, session, error);
+}
+
+void DatabaseWorker::append_message(quint64 request_id, const NewMessage& input)
+{
+    StorageError error;
+    MessageAppendResult appended;
+    if (QThread::currentThread() != thread() || !messages_) {
+        error.code    = StorageErrorCode::InvalidInput;
+        error.message = QStringLiteral("Message append requires an open worker connection");
+    } else {
+        const auto result = messages_->append_message(input, &error);
+        if (result.has_value()) {
+            appended = *result;
+        }
+    }
+    emit message_appended(request_id, appended, error);
+}
+
+void DatabaseWorker::history_before(quint64 request_id, qint64 before_id, int limit)
+{
+    StorageError error;
+    QList<MessageRecord> page;
+    bool has_more = false;
+    if (QThread::currentThread() != thread() || !messages_ || before_id < 0 || limit <= 0
+        || limit > protocol::maximum_history_limit) {
+        error.code    = StorageErrorCode::InvalidInput;
+        error.message = QStringLiteral("Message history requires an open worker connection and valid pagination");
+    } else {
+        const auto result = messages_->history_before(before_id == 0 ? std::nullopt : std::optional<qint64> { before_id }, limit, &error);
+        if (result.has_value()) {
+            page = *result;
+            if (page.size() == limit) {
+                const auto older = messages_->history_before(page.first().id, 1, &error);
+                if (older.has_value()) {
+                    has_more = !older->isEmpty();
+                }
+            }
+        }
+    }
+    emit message_history_loaded(request_id, page, has_more, error);
+}
+
+void DatabaseWorker::history_after(quint64 request_id, qint64 after_id, int limit)
+{
+    StorageError error;
+    QList<MessageRecord> page;
+    bool has_more = false;
+    if (QThread::currentThread() != thread() || !messages_ || after_id < 0 || limit <= 0
+        || limit > protocol::maximum_history_limit) {
+        error.code    = StorageErrorCode::InvalidInput;
+        error.message = QStringLiteral("Message history requires an open worker connection and valid pagination");
+    } else {
+        const auto result = messages_->history_after(after_id, limit, &error);
+        if (result.has_value()) {
+            page = *result;
+            if (page.size() == limit) {
+                const auto newer = messages_->history_after(page.last().id, 1, &error);
+                if (newer.has_value()) {
+                    has_more = !newer->isEmpty();
+                }
+            }
+        }
+    }
+    emit message_history_loaded(request_id, page, has_more, error);
 }
 
 void DatabaseWorker::close()
