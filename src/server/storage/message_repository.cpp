@@ -13,11 +13,13 @@ namespace {
     MessageRecord read_message(QSqlQuery& query)
     {
         MessageRecord message;
-        message.id                = query.value(0).toLongLong();
-        message.sender_id         = query.value(1).toLongLong();
-        message.client_message_id = query.value(2).toString();
-        message.body              = query.value(3).toString();
-        message.created_at        = query.value(4).toLongLong();
+        message.id                  = query.value(0).toLongLong();
+        message.sender_id           = query.value(1).toLongLong();
+        message.sender_username     = query.value(2).toString();
+        message.sender_display_name = query.value(3).toString();
+        message.client_message_id   = query.value(4).toString();
+        message.body                = query.value(5).toString();
+        message.created_at          = query.value(6).toLongLong();
         return message;
     }
 
@@ -67,7 +69,7 @@ std::optional<MessageAppendResult> MessageRepository::append_message(const NewMe
             if (!existing.has_value()) {
                 return std::nullopt;
             }
-            if (existing->body != input.body || existing->created_at != input.created_at) {
+            if (existing->body != input.body) {
                 detail::set_error(error, StorageErrorCode::Conflict,
                     QStringLiteral("Client message ID was already used for different content"));
                 return std::nullopt;
@@ -99,11 +101,13 @@ std::optional<QList<MessageRecord>> MessageRepository::history_before(
     }
 
     QSqlQuery query(database_);
-    QString statement = QStringLiteral("SELECT id, sender_id, client_message_id, body, created_at FROM messages");
+    QString statement = QStringLiteral("SELECT messages.id, messages.sender_id, users.username, users.display_name, "
+                                       "messages.client_message_id, messages.body, messages.created_at "
+                                       "FROM messages JOIN users ON users.id = messages.sender_id");
     if (before_id.has_value()) {
-        statement += QStringLiteral(" WHERE id < ?");
+        statement += QStringLiteral(" WHERE messages.id < ?");
     }
-    statement += QStringLiteral(" ORDER BY id DESC LIMIT ?");
+    statement += QStringLiteral(" ORDER BY messages.id DESC LIMIT ?");
     query.prepare(statement);
     if (before_id.has_value()) {
         query.addBindValue(*before_id);
@@ -128,8 +132,10 @@ std::optional<QList<MessageRecord>> MessageRepository::history_after(qint64 last
     }
 
     QSqlQuery query(database_);
-    query.prepare(QStringLiteral("SELECT id, sender_id, client_message_id, body, created_at FROM messages "
-                                 "WHERE id > ? ORDER BY id ASC LIMIT ?"));
+    query.prepare(QStringLiteral("SELECT messages.id, messages.sender_id, users.username, users.display_name, "
+                                 "messages.client_message_id, messages.body, messages.created_at "
+                                 "FROM messages JOIN users ON users.id = messages.sender_id "
+                                 "WHERE messages.id > ? ORDER BY messages.id ASC LIMIT ?"));
     query.addBindValue(last_id);
     query.addBindValue(limit);
     if (!query.exec()) {
@@ -143,7 +149,9 @@ std::optional<MessageRecord> MessageRepository::find_by_id(qint64 id, StorageErr
 {
     detail::clear_error(error);
     QSqlQuery query(database_);
-    query.prepare(QStringLiteral("SELECT id, sender_id, client_message_id, body, created_at FROM messages WHERE id = ?"));
+    query.prepare(QStringLiteral("SELECT messages.id, messages.sender_id, users.username, users.display_name, "
+                                 "messages.client_message_id, messages.body, messages.created_at "
+                                 "FROM messages JOIN users ON users.id = messages.sender_id WHERE messages.id = ?"));
     query.addBindValue(id);
     if (!query.exec()) {
         detail::set_query_error(error, query.lastError(), QStringLiteral("Could not find message"));
@@ -161,8 +169,10 @@ std::optional<MessageRecord> MessageRepository::find_by_client_id(
 {
     detail::clear_error(error);
     QSqlQuery query(database_);
-    query.prepare(QStringLiteral("SELECT id, sender_id, client_message_id, body, created_at FROM messages "
-                                 "WHERE sender_id = ? AND client_message_id = ?"));
+    query.prepare(QStringLiteral("SELECT messages.id, messages.sender_id, users.username, users.display_name, "
+                                 "messages.client_message_id, messages.body, messages.created_at "
+                                 "FROM messages JOIN users ON users.id = messages.sender_id "
+                                 "WHERE messages.sender_id = ? AND messages.client_message_id = ?"));
     query.addBindValue(sender_id);
     query.addBindValue(client_message_id);
     if (!query.exec()) {

@@ -62,10 +62,12 @@ struct NewSession {
     qint64 last_seen_at = 0;
 };
 
-/// Contains one persisted shared-room message.
+/// Contains one persisted shared-room message and its sender's public identity.
 struct MessageRecord {
     qint64 id        = 0;
     qint64 sender_id = 0;
+    QString sender_username;
+    QString sender_display_name;
     QString client_message_id;
     QString body;
     qint64 created_at = 0;

@@ -75,6 +75,8 @@ private slots:
     void reopensAfterFailedOpen();
     /// Checks duplicate open rejection without replacing the connection.
     void rejectsDuplicateOpen();
+    /// Checks queued idempotent appends and both history directions.
+    void appendsAndPagesMessages();
 };
 
 void DatabaseWorkerTest::opensAndClosesOnWorkerThread()
@@ -145,6 +147,87 @@ void DatabaseWorkerTest::rejectsDuplicateOpen()
     QCOMPARE(opened.at(1).at(0).toLongLong(), -1);
     const auto error = qvariant_cast<tcp_chat::storage::StorageError>(opened.at(1).at(1));
     QCOMPARE(error.code, tcp_chat::storage::StorageErrorCode::InvalidInput);
+}
+
+void DatabaseWorkerTest::appendsAndPagesMessages()
+{
+    QTemporaryDir temporary;
+    QVERIFY(temporary.isValid());
+    WorkerHarness harness;
+    QSignalSpy opened(harness.worker(), &tcp_chat::storage::DatabaseWorker::opened);
+    QSignalSpy created(harness.worker(), &tcp_chat::storage::DatabaseWorker::local_user_created);
+    QSignalSpy appended(harness.worker(), &tcp_chat::storage::DatabaseWorker::message_appended);
+    QSignalSpy history(harness.worker(), &tcp_chat::storage::DatabaseWorker::message_history_loaded);
+    QVERIFY(queue_open(harness.worker(), temporary.filePath(QStringLiteral("chat.sqlite")), tcp_chat::testing::migration_directory()));
+    QVERIFY(opened.wait(5000) || !opened.isEmpty());
+
+    const tcp_chat::storage::NewLocalUser new_user {
+        QStringLiteral("Alice"), QStringLiteral("alice"), QStringLiteral("Alice Example"), QStringLiteral("hash"), 1000
+    };
+    QVERIFY(QMetaObject::invokeMethod(harness.worker(), "create_local_user", Qt::QueuedConnection,
+        Q_ARG(quint64, 1), Q_ARG(tcp_chat::storage::NewLocalUser, new_user)));
+    QVERIFY(created.wait(5000) || !created.isEmpty());
+    const auto user = qvariant_cast<tcp_chat::storage::UserRecord>(created.at(0).at(1));
+    QVERIFY(user.id > 0);
+
+    QList<qint64> ids;
+    for (int sequence = 1; sequence <= 3; ++sequence) {
+        const tcp_chat::storage::NewMessage input {
+            user.id, QStringLiteral("client-%1").arg(sequence), QStringLiteral("message %1").arg(sequence), 1000 + sequence
+        };
+        QVERIFY(QMetaObject::invokeMethod(harness.worker(), "append_message", Qt::QueuedConnection,
+            Q_ARG(quint64, static_cast<quint64>(sequence + 1)), Q_ARG(tcp_chat::storage::NewMessage, input)));
+        QVERIFY(appended.wait(5000) || appended.size() >= sequence);
+        const auto result = qvariant_cast<tcp_chat::storage::MessageAppendResult>(appended.last().at(1));
+        QVERIFY(result.inserted);
+        QCOMPARE(result.message.sender_display_name, QStringLiteral("Alice Example"));
+        ids.append(result.message.id);
+    }
+
+    const tcp_chat::storage::NewMessage retry {
+        user.id, QStringLiteral("client-1"), QStringLiteral("message 1"), 9999
+    };
+    QVERIFY(QMetaObject::invokeMethod(harness.worker(), "append_message", Qt::QueuedConnection,
+        Q_ARG(quint64, 5), Q_ARG(tcp_chat::storage::NewMessage, retry)));
+    QVERIFY(appended.wait(5000) || appended.size() >= 4);
+    const auto retry_result = qvariant_cast<tcp_chat::storage::MessageAppendResult>(appended.last().at(1));
+    QVERIFY(!retry_result.inserted);
+    QCOMPARE(retry_result.message.id, ids.at(0));
+    QCOMPARE(retry_result.message.created_at, 1001);
+
+    QVERIFY(QMetaObject::invokeMethod(harness.worker(), "history_before", Qt::QueuedConnection,
+        Q_ARG(quint64, 6), Q_ARG(qint64, 0), Q_ARG(int, 2)));
+    QVERIFY(history.wait(5000) || !history.isEmpty());
+    auto page = qvariant_cast<QList<tcp_chat::storage::MessageRecord>>(history.at(0).at(1));
+    QCOMPARE(page.size(), 2);
+    QCOMPARE(page.at(0).id, ids.at(1));
+    QCOMPARE(page.at(1).id, ids.at(2));
+    QVERIFY(history.at(0).at(2).toBool());
+
+    QVERIFY(QMetaObject::invokeMethod(harness.worker(), "history_before", Qt::QueuedConnection,
+        Q_ARG(quint64, 7), Q_ARG(qint64, ids.at(1)), Q_ARG(int, 2)));
+    QVERIFY(history.wait(5000) || history.size() >= 2);
+    page = qvariant_cast<QList<tcp_chat::storage::MessageRecord>>(history.at(1).at(1));
+    QCOMPARE(page.size(), 1);
+    QCOMPARE(page.at(0).id, ids.at(0));
+    QVERIFY(!history.at(1).at(2).toBool());
+
+    QVERIFY(QMetaObject::invokeMethod(harness.worker(), "history_after", Qt::QueuedConnection,
+        Q_ARG(quint64, 8), Q_ARG(qint64, 0), Q_ARG(int, 2)));
+    QVERIFY(history.wait(5000) || history.size() >= 3);
+    page = qvariant_cast<QList<tcp_chat::storage::MessageRecord>>(history.at(2).at(1));
+    QCOMPARE(page.size(), 2);
+    QCOMPARE(page.at(0).id, ids.at(0));
+    QCOMPARE(page.at(1).id, ids.at(1));
+    QVERIFY(history.at(2).at(2).toBool());
+
+    QVERIFY(QMetaObject::invokeMethod(harness.worker(), "history_after", Qt::QueuedConnection,
+        Q_ARG(quint64, 9), Q_ARG(qint64, ids.at(1)), Q_ARG(int, 2)));
+    QVERIFY(history.wait(5000) || history.size() >= 4);
+    page = qvariant_cast<QList<tcp_chat::storage::MessageRecord>>(history.at(3).at(1));
+    QCOMPARE(page.size(), 1);
+    QCOMPARE(page.at(0).id, ids.at(2));
+    QVERIFY(!history.at(3).at(2).toBool());
 }
 
 QTEST_GUILESS_MAIN(DatabaseWorkerTest)

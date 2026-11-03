@@ -112,7 +112,11 @@ void MessageRepositoryTest::returnsExistingMessageForIdempotentRetry()
     const auto first = messages.append_message(input);
     QVERIFY(first.has_value());
     QVERIFY(first->inserted);
-    const auto retry = messages.append_message(input);
+    QCOMPARE(first->message.sender_username, QStringLiteral("Alice"));
+    QCOMPARE(first->message.sender_display_name, QStringLiteral("Alice"));
+    NewMessage retry_input = input;
+    retry_input.created_at += 1000;
+    const auto retry = messages.append_message(retry_input);
     QVERIFY(retry.has_value());
     QVERIFY(!retry->inserted);
     QCOMPARE(retry->message, first->message);
