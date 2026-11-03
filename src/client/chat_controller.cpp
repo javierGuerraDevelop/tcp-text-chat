@@ -75,6 +75,11 @@ bool ChatController::has_older_history() const
     return has_older_history_;
 }
 
+ChatModel* ChatController::model() const
+{
+    return model_;
+}
+
 void ChatController::authenticated(const protocol::UserIdentity& user)
 {
     if (model_ == nullptr) {

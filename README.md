@@ -123,9 +123,10 @@ build/bin/tcp_chat_client --host localhost --port 10443 \
 
 These fixture keys are public test data and must never protect a real deployment.
 The client presents local login/signup and Google/GitHub browser actions with progress,
-validation, cancellation, and safe errors. Sessions stay in memory, so restarting the
-client requires signing in again. The server accepts authenticated message history and
-send operations; the desktop chat page is not yet connected to that message API.
+validation, cancellation, and safe errors. The shared room supports live messages,
+incremental older history, plain-text composition, delivery feedback, and idempotent
+retries. Network reconnects resume the in-memory session and catch up without duplicating
+loaded messages; restarting the client still requires signing in again.
 
 The **Appearance** selector offers Auto, Light, and Dark. Auto follows Qt's system
 color-scheme notifications without a restart, falling back to Light when the platform

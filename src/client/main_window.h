@@ -1,6 +1,6 @@
 #pragma once
 
-#include "tcp_chat/auth_protocol.h"
+#include "chat_page.h"
 #include "theme_manager.h"
 
 #include <QMainWindow>
@@ -40,8 +40,20 @@ public:
     void show_authentication_error(const QString& message);
     /// Resets the forms and optionally displays a neutral status message.
     void reset_authentication(const QString& status = QString());
-    /// Shows the shared-room empty state for an authenticated public identity.
+    /// Shows the shared room for an authenticated public identity.
     void show_authenticated(const protocol::UserIdentity& user);
+    /// Attaches the controller-owned model to the message view.
+    void set_chat_model(ChatModel* model);
+    /// Displays the current chat connection and recovery controls.
+    void set_chat_connection(ChatPage::ConnectionState state, const QString& status = QString());
+    /// Displays history loading without hiding loaded messages.
+    void set_chat_history_loading(bool loading);
+    /// Controls availability of the older-history action.
+    void set_older_history_available(bool available);
+    /// Displays a safe send or history error within the room.
+    void show_chat_error(const QString& message);
+    /// Clears a draft only after the chat controller accepts it.
+    void clear_composer();
     /// Returns the visible application state.
     Page current_page() const;
 
@@ -56,6 +68,14 @@ signals:
     void cancel_requested();
     /// Emits when the user retries a failed connection.
     void retry_requested();
+    /// Emits a validated, unmodified message draft.
+    void send_requested(const QString& body);
+    /// Emits the failed message's idempotency key.
+    void message_retry_requested(const QString& client_message_id);
+    /// Requests the next older history page.
+    void load_older_requested();
+    /// Requests revocation of the current session.
+    void log_out_requested();
 
 private:
     /// Builds a theme preference control initialized from the manager.
@@ -66,7 +86,7 @@ private:
     QStackedWidget* const pages_;
     QLabel* const error_message_;
     AuthenticationPage* const authentication_page_;
-    QLabel* const chat_identity_;
+    ChatPage* const chat_page_;
 };
 
 } // namespace tcp_chat::client
