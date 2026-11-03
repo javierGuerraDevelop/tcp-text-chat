@@ -65,7 +65,7 @@ MainWindow::MainWindow(ThemeManager& theme_manager, QWidget* parent)
     , pages_(new QStackedWidget)
     , error_message_(new QLabel)
     , authentication_page_(new AuthenticationPage)
-    , chat_identity_(new QLabel)
+    , chat_page_(new ChatPage)
 {
     setWindowTitle(QStringLiteral("TCP Chat"));
     setMinimumSize(800, 680);
@@ -122,24 +122,8 @@ MainWindow::MainWindow(ThemeManager& theme_manager, QWidget* parent)
     cancel_button->setAccessibleName(QStringLiteral("Cancel connection"));
     create_action_row(connecting_layout)->addWidget(cancel_button);
 
-    auto* chat_layout = create_page(pages_, QStringLiteral("General room"),
-        QStringLiteral("One shared conversation with everyone in the room."));
-    auto* empty_label = new QLabel(QStringLiteral("No messages yet"), chat_layout->parentWidget());
-    empty_label->setObjectName(QStringLiteral("emptyChatLabel"));
-    empty_label->setProperty("role", QStringLiteral("heading"));
-    empty_label->setAlignment(Qt::AlignCenter);
-    chat_layout->addSpacing(32);
-    chat_layout->addWidget(empty_label);
-    auto* empty_description = new QLabel(QStringLiteral("Messages you send will appear here."), chat_layout->parentWidget());
-    empty_description->setProperty("role", QStringLiteral("secondary"));
-    empty_description->setAlignment(Qt::AlignCenter);
-    chat_layout->addWidget(empty_description);
-    chat_identity_->setParent(chat_layout->parentWidget());
-    chat_identity_->setObjectName(QStringLiteral("chatIdentity"));
-    chat_identity_->setProperty("role", QStringLiteral("secondary"));
-    chat_identity_->setTextFormat(Qt::PlainText);
-    chat_identity_->setAlignment(Qt::AlignCenter);
-    chat_layout->addWidget(chat_identity_);
+    chat_page_->setParent(pages_);
+    pages_->addWidget(chat_page_);
 
     auto* error_layout = create_page(pages_, QStringLiteral("Unable to continue"), QString());
     error_message_->setParent(error_layout->parentWidget());
@@ -169,6 +153,11 @@ MainWindow::MainWindow(ThemeManager& theme_manager, QWidget* parent)
     connect(authentication_page_, &AuthenticationPage::sign_up_requested, this, &MainWindow::sign_up_requested);
     connect(authentication_page_, &AuthenticationPage::oauth_requested, this, &MainWindow::oauth_requested);
     connect(authentication_page_, &AuthenticationPage::cancel_requested, this, &MainWindow::cancel_requested);
+    connect(chat_page_, &ChatPage::send_requested, this, &MainWindow::send_requested);
+    connect(chat_page_, &ChatPage::retry_requested, this, &MainWindow::message_retry_requested);
+    connect(chat_page_, &ChatPage::load_older_requested, this, &MainWindow::load_older_requested);
+    connect(chat_page_, &ChatPage::reconnect_requested, this, &MainWindow::retry_requested);
+    connect(chat_page_, &ChatPage::log_out_requested, this, &MainWindow::log_out_requested);
 
     show_page(Page::Welcome);
 }
@@ -206,8 +195,39 @@ void MainWindow::reset_authentication(const QString& status)
 
 void MainWindow::show_authenticated(const protocol::UserIdentity& user)
 {
-    chat_identity_->setText(QStringLiteral("Signed in as %1 (@%2)").arg(user.display_name, user.username));
+    chat_page_->set_user(user);
+    chat_page_->set_connection_state(ChatPage::ConnectionState::Connected);
     show_page(Page::Chat);
+}
+
+void MainWindow::set_chat_model(ChatModel* model)
+{
+    chat_page_->set_model(model);
+}
+
+void MainWindow::set_chat_connection(ChatPage::ConnectionState state, const QString& status)
+{
+    chat_page_->set_connection_state(state, status);
+}
+
+void MainWindow::set_chat_history_loading(bool loading)
+{
+    chat_page_->set_history_loading(loading);
+}
+
+void MainWindow::set_older_history_available(bool available)
+{
+    chat_page_->set_older_history_available(available);
+}
+
+void MainWindow::show_chat_error(const QString& message)
+{
+    chat_page_->show_error(message);
+}
+
+void MainWindow::clear_composer()
+{
+    chat_page_->clear_composer();
 }
 
 MainWindow::Page MainWindow::current_page() const

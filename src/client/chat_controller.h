@@ -27,6 +27,8 @@ public:
     bool is_loading_history() const;
     /// Returns whether an older page can be requested.
     bool has_older_history() const;
+    /// Returns the model updated by this controller.
+    ChatModel* model() const;
 
 signals:
     /// Publishes initial, older-page, and catch-up loading activity.

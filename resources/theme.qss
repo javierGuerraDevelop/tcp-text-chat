@@ -75,7 +75,8 @@ QCheckBox::indicator:focus {
     border-color: %ACCENT%;
 }
 
-QLineEdit {
+QLineEdit,
+QPlainTextEdit {
     background-color: %SURFACE%;
     border: 1px solid %BORDER%;
     border-radius: 6px;
@@ -84,8 +85,26 @@ QLineEdit {
     selection-color: %ON_ACCENT%;
 }
 
-QLineEdit:focus {
+QLineEdit:focus,
+QPlainTextEdit:focus {
     border: 1px solid %ACCENT%;
+}
+
+QListView {
+    background-color: %WINDOW%;
+    border: none;
+    padding: 4px;
+}
+
+QListView:focus {
+    border: 1px solid %ACCENT%;
+    border-radius: 6px;
+}
+
+QFrame[role="banner"] {
+    background-color: %SECONDARY_SURFACE%;
+    border: 1px solid %BORDER%;
+    border-radius: 6px;
 }
 
 QPushButton {

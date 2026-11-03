@@ -1,11 +1,14 @@
 #include "authentication_test_harness.h"
+#include "chat/message_service.h"
 #include "client/authentication_controller.h"
+#include "client/chat_controller.h"
 #include "client/client_application.h"
 #include "client/main_window.h"
 #include "client/theme_manager.h"
 
 #include <QLabel>
 #include <QLineEdit>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSettings>
 #include <QTabWidget>
@@ -32,14 +35,22 @@ public:
         qRegisterMetaType<State>("tcp_chat::client::AuthenticationController::State");
     }
 
-    /// Starts the server and application, then waits for the sign-in forms.
+    /// Starts authentication and messaging services, then waits for the sign-in forms.
     bool start()
     {
         if (!backend.start()) {
             return false;
         }
+        messaging = std::make_unique<tcp_chat::chat::MessageService>(&backend.server, &backend.service);
+        QSignalSpy messaging_ready(messaging.get(), &tcp_chat::chat::MessageService::ready);
+        if (messaging->start(backend.temporary.filePath(QStringLiteral("chat.sqlite")),
+                         QStringLiteral(TCP_CHAT_SOURCE_DIR "/migrations"))
+                .has_value()
+            || !messaging_ready.wait(5000) || !messaging_ready.at(0).at(0).toBool()) {
+            return false;
+        }
         window.show();
-        application = std::make_unique<ClientApplication>(window, controller, backend.client_options());
+        application = std::make_unique<ClientApplication>(window, controller, chat, backend.client_options());
         application->start();
         return wait_ready();
     }
@@ -56,8 +67,11 @@ public:
     ThemeManager theme { *qApp, nullptr, std::make_unique<QSettings>(settings_directory.filePath(QStringLiteral("window.ini")), QSettings::IniFormat) };
     MainWindow window { theme };
     AuthenticationTestHarness backend;
+    std::unique_ptr<tcp_chat::chat::MessageService> messaging;
     TlsClient socket;
     AuthenticationController controller;
+    tcp_chat::client::ChatModel chat_model;
+    tcp_chat::client::ChatController chat { &socket, &controller, &chat_model };
     std::unique_ptr<ClientApplication> application;
 };
 
@@ -89,7 +103,7 @@ private slots:
         QVERIFY(identity->text().contains(QStringLiteral("Alice Example")));
         QVERIFY(harness.window.findChild<QLineEdit*>(QStringLiteral("signupPassword"))->text().isEmpty());
 
-        harness.controller.log_out();
+        harness.window.findChild<QPushButton*>(QStringLiteral("signOut"))->click();
         QTRY_COMPARE(harness.controller.state(), State::Ready);
         QTRY_COMPARE(harness.window.current_page(), MainWindow::Page::Welcome);
         harness.window.findChild<QLineEdit*>(QStringLiteral("loginUsername"))->setText(QStringLiteral("Alice"));
@@ -127,7 +141,9 @@ private slots:
         QVERIFY(harness.backend.start());
         TlsClient socket;
         AuthenticationController controller(&socket, [](const QUrl&) { return true; });
-        ClientApplication application(harness.window, controller, harness.backend.client_options());
+        tcp_chat::client::ChatModel chat_model;
+        tcp_chat::client::ChatController chat(&socket, &controller, &chat_model);
+        ClientApplication application(harness.window, controller, chat, harness.backend.client_options());
         application.start();
         QTRY_COMPARE(controller.state(), State::Ready);
         harness.window.findChild<QPushButton*>(QStringLiteral("googleSignIn"))->click();
@@ -139,6 +155,53 @@ private slots:
         QTRY_COMPARE(harness.window.current_page(), MainWindow::Page::Welcome);
         QVERIFY(!controller.user().has_value());
         QVERIFY(harness.window.findChild<QPushButton*>(QStringLiteral("googleSignIn"))->isEnabled());
+    }
+
+    /// Sends through real widgets and resumes persisted history after network loss.
+    void chat_send_and_reconnect_flow()
+    {
+        ClientApplicationHarness harness;
+        QVERIFY(harness.start());
+        QSignalSpy history_loaded(&harness.chat, &tcp_chat::client::ChatController::history_loaded);
+        auto* tabs = harness.window.findChild<QTabWidget*>(QStringLiteral("authenticationModes"));
+        tabs->setCurrentIndex(1);
+        harness.window.findChild<QLineEdit*>(QStringLiteral("signupUsername"))->setText(QStringLiteral("Alice"));
+        harness.window.findChild<QLineEdit*>(QStringLiteral("signupDisplayName"))->setText(QStringLiteral("Alice Example"));
+        harness.window.findChild<QLineEdit*>(QStringLiteral("signupPassword"))->setText(QStringLiteral("correct horse battery staple"));
+        harness.window.findChild<QLineEdit*>(QStringLiteral("signupConfirmation"))->setText(QStringLiteral("correct horse battery staple"));
+        harness.window.findChild<QPushButton*>(QStringLiteral("signupSubmit"))->click();
+        QTRY_COMPARE(harness.controller.state(), State::Authenticated);
+        QTRY_COMPARE(harness.window.current_page(), MainWindow::Page::Chat);
+        QTRY_COMPARE(history_loaded.size(), 1);
+
+        auto* composer = harness.window.findChild<QPlainTextEdit*>(QStringLiteral("messageComposer"));
+        auto* send     = harness.window.findChild<QPushButton*>(QStringLiteral("sendMessage"));
+        composer->setPlainText(QStringLiteral("<b>Hello from the real client</b>"));
+        send->click();
+        QTRY_COMPARE(harness.chat_model.rowCount(), 1);
+        const QString client_id = harness.chat_model.data(harness.chat_model.index(0),
+                                                        tcp_chat::client::ChatModel::ClientMessageIdRole)
+                                      .toString();
+        QTRY_COMPARE(harness.chat_model.delivery_for_client_id(client_id),
+            std::optional<tcp_chat::client::ChatModel::Delivery> { tcp_chat::client::ChatModel::Delivery::Sent });
+        QCOMPARE(harness.chat_model.data(harness.chat_model.index(0)), QStringLiteral("<b>Hello from the real client</b>"));
+        QVERIFY(composer->toPlainText().isEmpty());
+
+        QVERIFY(!harness.backend.server_connected.isEmpty());
+        const quint64 connection_id = harness.backend.server_connected.last().at(0).toULongLong();
+        harness.backend.server.disconnect_client(connection_id);
+        QTRY_COMPARE(harness.controller.state(), State::Disconnected);
+        auto* reconnect = harness.window.findChild<QPushButton*>(QStringLiteral("reconnectChat"));
+        QTRY_VERIFY(reconnect->isEnabled());
+        QVERIFY(harness.window.findChild<QWidget*>(QStringLiteral("chatConnectionBanner"))->isVisibleTo(&harness.window));
+        composer->setPlainText(QStringLiteral("Unsent draft"));
+        reconnect->click();
+
+        QTRY_COMPARE(harness.controller.state(), State::Authenticated);
+        QTRY_COMPARE(history_loaded.size(), 2);
+        QCOMPARE(harness.chat_model.rowCount(), 1);
+        QCOMPARE(composer->toPlainText(), QStringLiteral("Unsent draft"));
+        QVERIFY(harness.window.findChild<QWidget*>(QStringLiteral("chatConnectionBanner"))->isHidden());
     }
 };
 

@@ -1,4 +1,5 @@
 #include "authentication_controller.h"
+#include "chat_controller.h"
 #include "client_application.h"
 #include "client_configuration.h"
 #include "main_window.h"
@@ -10,7 +11,7 @@
 #include <QCommandLineParser>
 #include <QTextStream>
 
-/// Starts the desktop client and connects its authentication flow to the configured server.
+/// Starts the desktop client and connects authentication and chat to the configured server.
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
@@ -33,9 +34,11 @@ int main(int argc, char* argv[])
 
     tcp_chat::client::TlsClient socket;
     tcp_chat::client::AuthenticationController controller(&socket);
+    tcp_chat::client::ChatModel chat_model;
+    tcp_chat::client::ChatController chat_controller(&socket, &controller, &chat_model);
     tcp_chat::client::ThemeManager theme_manager(app);
     tcp_chat::client::MainWindow window(theme_manager);
-    tcp_chat::client::ClientApplication application(window, controller, *configuration);
+    tcp_chat::client::ClientApplication application(window, controller, chat_controller, *configuration);
     window.show();
     application.start();
     return QApplication::exec();

@@ -1,3 +1,4 @@
+#include "client/chat_model.h"
 #include "client/main_window.h"
 #include "client/theme_manager.h"
 
@@ -162,6 +163,26 @@ private slots:
             const int required_height = title->heightForWidth(title->width());
             QVERIFY(required_height >= 0);
             QVERIFY2(title->height() >= required_height, qPrintable(title->text()));
+        }
+
+        tcp_chat::client::ChatModel chat_model;
+        const tcp_chat::protocol::UserIdentity alice { 7, QStringLiteral("Alice"), QStringLiteral("Alice Example") };
+        const tcp_chat::protocol::UserIdentity bob { 8, QStringLiteral("Bob"), QStringLiteral("Bob Example") };
+        window.set_chat_model(&chat_model);
+        chat_model.set_user(alice);
+        chat_model.append_history({
+            tcp_chat::protocol::ChatMessage { 1, bob, QStringLiteral("bob-1"), QStringLiteral("Welcome to the room"), 1000 },
+            tcp_chat::protocol::ChatMessage { 2, alice, QStringLiteral("alice-1"), QStringLiteral("Thanks!\nThis is a multiline reply."), 2000 },
+        });
+        window.show_authenticated(alice);
+        QCoreApplication::processEvents();
+        if (!capture_directory.isEmpty()) {
+            QVERIFY(window.grab().save(capture_directory + QStringLiteral("/chat-dark.png")));
+        }
+        selector->setCurrentIndex(selector->findData(static_cast<int>(ThemeManager::Preference::Light)));
+        QCoreApplication::processEvents();
+        if (!capture_directory.isEmpty()) {
+            QVERIFY(window.grab().save(capture_directory + QStringLiteral("/chat-light.png")));
         }
     }
 };

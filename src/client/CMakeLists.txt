@@ -31,10 +31,14 @@ tcp_chat_configure_target(tcp_chat_client_transport)
 add_library(tcp_chat_client_ui STATIC
     authentication_page.cpp
     authentication_page.h
+    chat_page.cpp
+    chat_page.h
     client_application.cpp
     client_application.h
     main_window.cpp
     main_window.h
+    message_delegate.cpp
+    message_delegate.h
     theme_manager.cpp
     theme_manager.h
 )
