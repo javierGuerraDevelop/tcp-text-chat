@@ -47,6 +47,18 @@ std::optional<QString> LocalAuthenticationClient::log_in(const QString& username
     return send_request(Operation::LogIn, request.type, payload);
 }
 
+std::optional<QString> LocalAuthenticationClient::resume_session(const QString& session_token)
+{
+    QJsonObject payload { { QStringLiteral("sessionToken"), session_token } };
+    protocol::Envelope request;
+    request.type    = protocol::MessageType::AuthSession;
+    request.payload = payload;
+    if (!protocol::session_token_from_envelope(request).has_value()) {
+        return QStringLiteral("The session token is invalid");
+    }
+    return send_request(Operation::Session, request.type, payload);
+}
+
 std::optional<QString> LocalAuthenticationClient::log_out(const QString& session_token)
 {
     const QJsonObject payload { { QStringLiteral("sessionToken"), session_token } };
@@ -112,7 +124,10 @@ void LocalAuthenticationClient::message_received(const protocol::Envelope& envel
         emit logged_out();
         return;
     }
-    if (completed != Operation::LogOut && result->user.has_value() && result->session_token.has_value()) {
+    const bool new_session = (completed == Operation::SignUp || completed == Operation::LogIn)
+        && result->user.has_value() && result->session_token.has_value();
+    const bool resumed_session = completed == Operation::Session && result->user.has_value() && !result->session_token.has_value();
+    if (new_session || resumed_session) {
         emit authenticated(*result);
         return;
     }
