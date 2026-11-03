@@ -190,6 +190,12 @@ request, `hasMore` reports whether older messages exist. For `afterId`, it repor
 another newer page exists; clients repeat catch-up from the last received ID until it is
 false.
 
+Valid send requests are limited per connection and per user in fixed 60-second windows,
+with a default maximum of 30 in each window. Excess sends and operations beyond the
+bounded per-connection or global pending queues return `rate_limited`. Live delivery uses
+the bounded transport output queues; a client whose output cannot accept an event is
+disconnected and can resynchronize with `afterId` after reconnecting.
+
 ## Browser OAuth
 
 `auth.oauth.start` accepts `{ "provider": "provider-id" }`. The `auth.oauth.result`

@@ -7,7 +7,7 @@ class QCommandLineParser;
 
 namespace tcp_chat::server {
 
-/// Contains validated startup settings for the headless authentication server.
+/// Contains validated startup settings for the headless chat server.
 struct ServerConfiguration {
     TlsServerConfiguration tls;
     QString database_path;

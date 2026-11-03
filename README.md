@@ -3,9 +3,10 @@
 A C++20 desktop text chat project with a Qt 6 client, a headless server, TLS
 transport, and SQLite persistence. The first release provides one shared room,
 username/password accounts, and Google/GitHub sign-in. The desktop client supports
-local and browser authentication over TLS, and the headless server persists accounts
-and sessions in SQLite. The versioned TCP wire contract is documented in
-`docs/protocol.md`.
+local and browser authentication over TLS, and the headless server persists accounts,
+sessions, and shared-room messages in SQLite. The message API supports idempotent sends,
+ordered broadcasts, history pagination, and reconnect catch-up. The versioned TCP wire
+contract is documented in `docs/protocol.md`.
 
 ## Requirements
 
@@ -123,7 +124,8 @@ build/bin/tcp_chat_client --host localhost --port 10443 \
 These fixture keys are public test data and must never protect a real deployment.
 The client presents local login/signup and Google/GitHub browser actions with progress,
 validation, cancellation, and safe errors. Sessions stay in memory, so restarting the
-client requires signing in again. Message exchange is not yet connected to the chat page.
+client requires signing in again. The server accepts authenticated message history and
+send operations; the desktop chat page is not yet connected to that message API.
 
 The **Appearance** selector offers Auto, Light, and Dark. Auto follows Qt's system
 color-scheme notifications without a restart, falling back to Light when the platform

@@ -1,4 +1,5 @@
 #include "auth/authentication_service.h"
+#include "chat/message_service.h"
 #include "server_configuration.h"
 #include "tcp_chat/version.h"
 #include "tls_server.h"
@@ -10,7 +11,7 @@
 
 Q_LOGGING_CATEGORY(server_log, "tcp_chat.server")
 
-/// Starts the configured TLS authentication server and runs until termination.
+/// Starts the configured TLS chat server and runs until termination.
 int main(int argc, char* argv[])
 {
     QCoreApplication app(argc, argv);
@@ -38,14 +39,28 @@ int main(int argc, char* argv[])
         return 2;
     }
     tcp_chat::auth::AuthenticationService authentication(&server, configuration->authentication);
-    QObject::connect(&authentication, &tcp_chat::auth::AuthenticationService::ready, &app, [](bool success, const QString& message) {
+    tcp_chat::chat::MessageService messaging(&server, &authentication);
+    QObject::connect(&messaging, &tcp_chat::chat::MessageService::ready, &app, [](bool success, const QString& message) {
         if (!success) {
-            qCCritical(server_log) << "Authentication startup failed:" << message;
+            qCCritical(server_log) << "Messaging startup failed:" << message;
             QCoreApplication::exit(1);
             return;
         }
-        qCInfo(server_log) << "Authentication service is ready";
+        qCInfo(server_log) << "Messaging service is ready";
     });
+    QObject::connect(&authentication, &tcp_chat::auth::AuthenticationService::ready, &app,
+        [&messaging, &configuration](bool success, const QString& message) {
+            if (!success) {
+                qCCritical(server_log) << "Authentication startup failed:" << message;
+                QCoreApplication::exit(1);
+                return;
+            }
+            qCInfo(server_log) << "Authentication service is ready";
+            if (const auto error = messaging.start(configuration->database_path, configuration->migrations_path); error.has_value()) {
+                qCCritical(server_log) << "Messaging startup failed:" << *error;
+                QCoreApplication::exit(1);
+            }
+        });
     QObject::connect(&server, &tcp_chat::server::TlsServer::connection_error, &app, [](const QString& message) {
         qCWarning(server_log) << "Client connection failed:" << message;
     });
