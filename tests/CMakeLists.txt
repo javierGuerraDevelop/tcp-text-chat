@@ -149,9 +149,10 @@ endfunction()
 
 tcp_chat_add_ui_test(tcp_chat_theme_tests test_theme_manager.cpp theme)
 tcp_chat_add_ui_test(tcp_chat_main_window_tests test_main_window.cpp main_window)
+tcp_chat_add_ui_test(tcp_chat_chat_page_tests test_chat_page.cpp chat_page)
 tcp_chat_add_ui_test(tcp_chat_authentication_page_tests test_authentication_page.cpp authentication_page)
 tcp_chat_add_ui_test(tcp_chat_client_application_tests test_client_application.cpp client_application)
-target_link_libraries(tcp_chat_client_application_tests PRIVATE tcp_chat::auth)
+target_link_libraries(tcp_chat_client_application_tests PRIVATE tcp_chat::auth tcp_chat::chat)
 target_compile_definitions(tcp_chat_client_application_tests PRIVATE TCP_CHAT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
 add_test(NAME transport COMMAND tcp_chat_transport_tests)
