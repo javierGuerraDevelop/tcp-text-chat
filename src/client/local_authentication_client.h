@@ -21,6 +21,8 @@ public:
     std::optional<QString> sign_up(const QString& username, const QString& password, const std::optional<QString>& display_name = std::nullopt);
     /// Starts local sign-in without distinguishing malformed credentials in server errors.
     std::optional<QString> log_in(const QString& username, const QString& password);
+    /// Resumes an in-memory session after reconnecting without issuing another token.
+    std::optional<QString> resume_session(const QString& session_token);
     /// Starts revocation of an in-memory session token.
     std::optional<QString> log_out(const QString& session_token);
     /// Invalidates the pending local response without waiting for network I/O.
@@ -44,6 +46,7 @@ private:
         None,
         SignUp,
         LogIn,
+        Session,
         LogOut,
     };
 

@@ -153,17 +153,19 @@ private slots:
         QVERIFY(!controller.user().has_value());
     }
 
-    /// Clears the in-memory identity when the authenticated connection ends.
-    void disconnect_clears_session()
+    /// Preserves the in-memory session and resumes it after a network reconnect.
+    void disconnect_preserves_and_resumes_session()
     {
         AuthenticationTestHarness harness;
         QVERIFY(harness.start());
         TlsClient socket;
         AuthenticationController controller(&socket);
         QSignalSpy connection_failed(&controller, &AuthenticationController::connection_failed);
+        QSignalSpy authenticated(&controller, &AuthenticationController::authenticated);
         QVERIFY(connect_controller(harness, controller));
         controller.sign_up(QStringLiteral("Alice"), QStringLiteral("correct horse battery staple"));
         QTRY_COMPARE(controller.state(), State::Authenticated);
+        const qint64 expires_at = controller.session_expires_at();
         QVERIFY(!harness.server_connected.isEmpty());
         const quint64 id = harness.server_connected.at(0).at(0).toULongLong();
 
@@ -171,8 +173,15 @@ private slots:
 
         QTRY_COMPARE(connection_failed.count(), 1);
         QCOMPARE(controller.state(), State::Disconnected);
-        QVERIFY(!controller.user().has_value());
-        QCOMPARE(controller.session_expires_at(), 0);
+        QVERIFY(controller.user().has_value());
+        QCOMPARE(controller.session_expires_at(), expires_at);
+
+        controller.reconnect_to_server();
+        QTRY_COMPARE(controller.state(), State::Authenticated);
+        QTRY_COMPARE(authenticated.count(), 2);
+        QVERIFY(controller.user().has_value());
+        QCOMPARE(controller.user()->username, QStringLiteral("Alice"));
+        QCOMPARE(controller.session_expires_at(), expires_at);
     }
 };
 

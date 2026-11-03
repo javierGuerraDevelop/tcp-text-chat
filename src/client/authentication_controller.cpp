@@ -11,8 +11,20 @@ AuthenticationController::AuthenticationController(TlsClient* client, std::funct
     , oauth_(client, std::move(browser_opener))
 {
     connect(client_, &TlsClient::connected, this, [this]() {
-        if (state_ == State::Connecting) {
+        if (state_ != State::Connecting) {
+            return;
+        }
+        if (session_token_.isEmpty()) {
             set_state(State::Ready);
+            return;
+        }
+        set_state(State::Authenticating);
+        resuming_session_ = true;
+        if (const auto error = local_.resume_session(session_token_); error.has_value()) {
+            resuming_session_ = false;
+            clear_session();
+            set_state(State::Ready);
+            emit authentication_failed(*error);
         }
     });
     connect(client_, &TlsClient::error, this, &AuthenticationController::fail_connection);
@@ -22,10 +34,16 @@ AuthenticationController::AuthenticationController(TlsClient* client, std::funct
     });
     connect(client_, &TlsClient::disconnected, this, [this]() {
         if (reconnect_pending_) {
-            reconnect_pending_ = false;
-            QTimer::singleShot(0, this, [this]() {
+            reconnect_pending_     = false;
+            const bool preserve    = preserve_on_reconnect_;
+            preserve_on_reconnect_ = false;
+            QTimer::singleShot(0, this, [this, preserve]() {
                 if (state_ == State::Disconnected && configuration_.has_value()) {
-                    connect_to_server(*configuration_);
+                    if (preserve) {
+                        reconnect_to_server();
+                    } else {
+                        connect_to_server(*configuration_);
+                    }
                 }
             });
             return;
@@ -52,9 +70,27 @@ AuthenticationController::AuthenticationController(TlsClient* client, std::funct
 
 void AuthenticationController::connect_to_server(const TlsClientConfiguration& configuration)
 {
+    start_connection(configuration, false);
+}
+
+void AuthenticationController::reconnect_to_server()
+{
+    if (!configuration_.has_value()) {
+        emit connection_failed(QStringLiteral("No previous server connection is available"));
+        return;
+    }
+    start_connection(*configuration_, true);
+}
+
+void AuthenticationController::start_connection(const TlsClientConfiguration& configuration, bool preserve_session)
+{
     configuration_ = configuration;
     local_.cancel();
-    clear_session();
+    resuming_session_      = false;
+    preserve_on_reconnect_ = preserve_session;
+    if (!preserve_session) {
+        clear_session();
+    }
     if (client_->state() != TlsClient::State::Disconnected) {
         reconnect_pending_ = true;
         set_state(State::Disconnected);
@@ -172,11 +208,16 @@ void AuthenticationController::set_state(State state)
 
 void AuthenticationController::complete_authentication(const protocol::AuthenticationResult& result)
 {
-    if (!result.user.has_value() || !result.session_token.has_value() || !result.expires_at.has_value()) {
+    if (!result.user.has_value() || !result.expires_at.has_value()
+        || (!result.session_token.has_value() && session_token_.isEmpty())) {
+        clear_session();
         fail_connection(QStringLiteral("The server returned an invalid session"));
         return;
     }
-    session_token_      = *result.session_token;
+    if (result.session_token.has_value()) {
+        session_token_ = *result.session_token;
+    }
+    resuming_session_   = false;
     user_               = *result.user;
     session_expires_at_ = *result.expires_at;
     set_state(State::Authenticated);
@@ -187,6 +228,13 @@ void AuthenticationController::local_failed(const QString& message)
 {
     if (client_->state() != TlsClient::State::Connected) {
         fail_connection(message);
+        return;
+    }
+    if (resuming_session_) {
+        resuming_session_ = false;
+        clear_session();
+        set_state(State::Ready);
+        emit authentication_failed(QStringLiteral("Your session could not be restored. Sign in again."));
         return;
     }
     set_state(user_.has_value() ? State::Authenticated : State::Ready);
@@ -209,7 +257,7 @@ void AuthenticationController::fail_connection(const QString& message)
     if (reconnect_pending_) {
         return;
     }
-    clear_session();
+    resuming_session_ = false;
     set_state(State::Disconnected);
     emit connection_failed(message);
 }

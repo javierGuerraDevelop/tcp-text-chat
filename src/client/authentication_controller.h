@@ -33,6 +33,8 @@ public:
 
     /// Starts or replaces an encrypted server connection and clears any previous session.
     void connect_to_server(const TlsClientConfiguration& configuration);
+    /// Reconnects with the current configuration and resumes any in-memory session.
+    void reconnect_to_server();
     /// Starts local sign-in after the connection is ready.
     void log_in(const QString& username, const QString& password);
     /// Starts local account creation after the connection is ready.
@@ -74,10 +76,12 @@ private:
     void local_failed(const QString& message);
     /// Handles an OAuth failure after its socket has been reset.
     void oauth_failed(const QString& message);
-    /// Clears session state and reports a transport failure.
+    /// Reports a transport failure while retaining an in-memory session for resumption.
     void fail_connection(const QString& message);
     /// Erases the controller's session references.
     void clear_session();
+    /// Connects with explicit session preservation for reconnect and cancellation flows.
+    void start_connection(const TlsClientConfiguration& configuration, bool preserve_session);
 
     TlsClient* const client_;
     LocalAuthenticationClient local_;
@@ -86,8 +90,10 @@ private:
     State state_ = State::Disconnected;
     QString session_token_;
     std::optional<protocol::UserIdentity> user_;
-    qint64 session_expires_at_ = 0;
-    bool reconnect_pending_    = false;
+    qint64 session_expires_at_  = 0;
+    bool reconnect_pending_     = false;
+    bool preserve_on_reconnect_ = false;
+    bool resuming_session_      = false;
 };
 
 } // namespace tcp_chat::client
